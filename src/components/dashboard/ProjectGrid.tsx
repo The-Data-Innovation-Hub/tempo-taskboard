@@ -10,18 +10,15 @@ import {
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
 import { cn } from "../../lib/utils";
-import { projectApi, organizationApi } from "@/lib/api";
+import { projectApi, organizationApi, Project } from "@/lib/api";
 import { useToast } from "../ui/use-toast";
 import CreateProjectButton from "../home/CreateProjectButton";
 import CreateProjectModal from "../modals/CreateProjectModal";
 import { useAuth } from "@/lib/auth";
 import { supabase } from "@/lib/supabase";
 
-// Project interface is now imported from api.ts
-
 interface ProjectGridProps {
   projects?: Project[];
-
   onSelectProject?: (id: string) => void;
   onEditProject?: (id: string) => void;
   onDeleteProject?: (id: string) => void;

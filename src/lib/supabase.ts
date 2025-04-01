@@ -33,7 +33,7 @@ if (import.meta.env.DEV) {
   });
 }
 
-// Create a complete mock implementation of the Supabase client
+// Create a complete mock implementation of the Supabase client with proper types
 const createMockClient = () => {
   console.warn(
     "Using mock Supabase implementation - this may cause issues with real data.",
@@ -79,10 +79,43 @@ const createMockClient = () => {
         data: { subscription: { unsubscribe: () => {} } },
       };
     },
+    updateUser: async (attributes: any) => ({
+      data: { user: null },
+      error: null,
+    }),
+  };
+
+  // Create a mock storage object
+  const mockStorage = {
+    from: (bucket: string) => ({
+      upload: async (path: string, fileBody: any, options?: any) => ({
+        data: { path },
+        error: null,
+      }),
+      getPublicUrl: (path: string) => ({
+        data: { publicUrl: `https://example.com/${bucket}/${path}` },
+      }),
+      list: async (prefix?: string, options?: any) => ({
+        data: [],
+        error: null,
+      }),
+      remove: async (paths: string[]) => ({
+        data: { count: paths.length },
+        error: null,
+      }),
+    }),
+    listBuckets: async () => ({
+      data: [
+        { id: "avatars", name: "avatars", public: true },
+        { id: "task-files", name: "task-files", public: true },
+      ],
+      error: null,
+    }),
   };
 
   return {
     auth: mockAuth,
+    storage: mockStorage,
     from: (table: string) => ({
       select: (columns: string = "*") => ({
         eq: (column: string, value: any) => ({
@@ -91,24 +124,56 @@ const createMockClient = () => {
             data: [],
             error: null,
           }),
+          limit: (limit: number) => ({
+            data: [],
+            error: null,
+          }),
+          range: (from: number, to: number) => ({
+            data: [],
+            error: null,
+          }),
         }),
         order: (column: string, { ascending }: any = {}) => ({
           data: [],
           error: null,
+          limit: (limit: number) => ({
+            data: [],
+            error: null,
+          }),
         }),
         neq: (column: string, value: any) => ({ data: [], error: null }),
+        in: (column: string, values: any[]) => ({
+          data: [],
+          error: null,
+        }),
+        range: (from: number, to: number) => ({
+          data: [],
+          error: null,
+        }),
+        limit: (limit: number) => ({
+          data: [],
+          error: null,
+        }),
       }),
       insert: (values: any) => ({
         select: (columns: string = "*") => ({
           single: async () => ({ data: null, error: null }),
         }),
+        onConflict: (columns: string | string[]) => ({
+          ignore: () => ({ data: null, error: null }),
+        }),
       }),
       update: (values: any) => ({
-        eq: (column: string, value: any) => ({ error: null }),
-        neq: (column: string, value: any) => ({ error: null }),
+        eq: (column: string, value: any) => ({ data: null, error: null }),
+        neq: (column: string, value: any) => ({ data: null, error: null }),
+        match: (query: any) => ({ data: null, error: null }),
+        select: (columns: string = "*") => ({
+          single: async () => ({ data: null, error: null }),
+        }),
       }),
       delete: () => ({
-        eq: (column: string, value: any) => ({ error: null }),
+        eq: (column: string, value: any) => ({ data: null, error: null }),
+        match: (query: any) => ({ data: null, error: null }),
       }),
       count: (options: any = {}) => ({ count: 0, error: null }),
     }),
@@ -122,7 +187,7 @@ const createMockClient = () => {
         error: null,
       }),
     },
-  };
+  } as unknown as ReturnType<typeof createClient<Database>>;
 };
 
 // Create the real Supabase client

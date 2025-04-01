@@ -1,4 +1,4 @@
-import { Database } from "./supabase";
+import type { Database } from "./supabase";
 
 export type UserRole = "admin" | "user";
 
@@ -9,6 +9,7 @@ export interface User {
   role: UserRole;
   avatar?: string;
   jobTitle?: string;
+  organizationId?: string;
   organization?: Organization;
   projects?: Project[];
 }
@@ -31,6 +32,9 @@ export interface Project {
   is_favorite: boolean;
   created_at: string;
   updated_at: string;
+  lastUpdated?: string;
+  memberCount?: number;
+  taskCount?: number;
   columns: Column[];
 }
 
@@ -78,3 +82,31 @@ export interface TaskAttachment {
   created_at: string;
   updated_at: string;
 }
+
+// Type definitions for Supabase PostgreSQL functions
+export type PostgrestError = {
+  message: string;
+  details: string;
+  hint: string;
+  code: string;
+};
+
+export type PostgrestResponse<T> = {
+  data: T | null;
+  error: PostgrestError | null;
+  count: number | null;
+  status: number;
+  statusText: string;
+};
+
+// Export database types for use in the application
+export type Tables = Database["public"]["Tables"];
+export type TablesInsert = {
+  [K in keyof Tables]: Tables[K]["Insert"];
+};
+export type TablesUpdate = {
+  [K in keyof Tables]: Tables[K]["Update"];
+};
+export type TablesRow = {
+  [K in keyof Tables]: Tables[K]["Row"];
+};

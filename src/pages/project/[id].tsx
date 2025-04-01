@@ -10,23 +10,9 @@ import { supabase } from "@/lib/supabase";
 import { columnApi, taskApi, projectApi } from "@/lib/api";
 import { Loader2 } from "lucide-react";
 
-interface Task {
-  id: string;
-  title: string;
-  description?: string;
-  labels?: { id: string; name: string; color: string }[];
-  dueDate?: Date;
-  assignees?: { id: string; name: string; avatar: string }[];
-  commentsCount?: number;
-}
+import { Task, Column } from "@/lib/api";
 
-interface Column {
-  id: string;
-  title: string;
-  tasks: Task[];
-}
-
-interface Project {
+interface ProjectWithColumns {
   id: string;
   title: string;
   description?: string;
@@ -159,7 +145,7 @@ const ProjectPage = () => {
     taskId?: string;
   } | null>(null);
 
-  const [project, setProject] = useState<Project | null>(null);
+  const [project, setProject] = useState<ProjectWithColumns | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [labels, setLabels] = useState<
@@ -240,7 +226,7 @@ const ProjectPage = () => {
           setColumns(columnsWithTasks);
 
           // Create a project object with columns for the UI
-          const projectWithColumns: Project = {
+          const projectWithColumns: ProjectWithColumns = {
             ...projectData,
             columns: columnsWithTasks,
           };
@@ -253,7 +239,7 @@ const ProjectPage = () => {
           setProject({
             ...projectData,
             columns: [],
-          });
+          } as ProjectWithColumns);
         }
       } catch (error) {
         console.error("Error fetching project data:", error);

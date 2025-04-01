@@ -3,6 +3,14 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/lib/supabase";
 import { Loader2 } from "lucide-react";
+import { Database } from "@/types/supabase";
+
+type UsersCountResult =
+  | Database["public"]["Tables"]["users"]["Row"][]
+  | { count: number }[];
+type ProfilesCountResult =
+  | Database["public"]["Tables"]["profiles"]["Row"][]
+  | { count: number }[];
 
 const CheckAuthSetupButton = () => {
   const { toast } = useToast();
@@ -13,14 +21,17 @@ const CheckAuthSetupButton = () => {
     try {
       // Direct database queries instead of using edge function
       // Check users table
-      const { data: usersData, error: usersError } = await supabase
+      const { data: usersData, error: usersError } = (await supabase
         .from("users")
-        .select("count(*)");
+        .select("count(*)")) as { data: UsersCountResult | null; error: any };
 
       // Check profiles table
-      const { data: profilesData, error: profilesError } = await supabase
+      const { data: profilesData, error: profilesError } = (await supabase
         .from("profiles")
-        .select("count(*)");
+        .select("count(*)")) as {
+        data: ProfilesCountResult | null;
+        error: any;
+      };
 
       // Check admin user
       const { data: adminData, error: adminError } = await supabase

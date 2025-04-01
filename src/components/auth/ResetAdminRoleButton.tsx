@@ -4,6 +4,12 @@ import { useToast } from "@/components/ui/use-toast";
 import { supabase } from "@/lib/supabase";
 import { Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
+import { Database } from "@/types/supabase";
+
+type ProfileUpdateResponse = {
+  data: Database["public"]["Tables"]["profiles"]["Row"][] | null;
+  error: any;
+};
 
 const ResetAdminRoleButton = () => {
   const { toast } = useToast();
@@ -14,11 +20,11 @@ const ResetAdminRoleButton = () => {
     setIsLoading(true);
     try {
       // Direct database update instead of using edge function
-      const { data, error } = await supabase
+      const { data, error } = (await supabase
         .from("profiles")
         .update({ role: "admin" })
         .eq("email", "admin@example.com")
-        .select();
+        .select()) as ProfileUpdateResponse;
 
       if (error) {
         throw new Error(error.message);

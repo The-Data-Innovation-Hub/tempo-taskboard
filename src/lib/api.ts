@@ -1,5 +1,40 @@
 import { supabase } from "./supabase";
-import { User } from "./auth";
+import { User, UserRole } from "./auth";
+import type { Database } from "@/types/supabase";
+
+// Type definitions for Supabase responses
+type SupabaseResponse<T> = {
+  data: T | null;
+  error: Error | null;
+};
+
+type SupabaseCountResponse = {
+  count: number | null;
+  error: Error | null;
+};
+
+type SupabaseListResponse<T> = {
+  data: T[] | null;
+  error: Error | null;
+};
+
+type SupabaseSingleResponse<T> = {
+  data: T;
+  error: Error | null;
+};
+
+type SupabaseAuthResponse = {
+  data: {
+    user: any;
+    session: any;
+  };
+  error: Error | null;
+};
+
+type SupabaseStorageResponse = {
+  data: any;
+  error: Error | null;
+};
 
 // Organization types
 export interface Organization {
@@ -98,10 +133,22 @@ export const userApi = {
   async getAll(): Promise<User[]> {
     try {
       console.log("API: Fetching all users");
-      const { data, error } = await supabase
+      const { data, error } = (await supabase
         .from("profiles")
         .select("*, organizations(*), user_projects(project_id, projects(*))")
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: false })) as SupabaseListResponse<
+        Database["public"]["Tables"]["profiles"]["Row"] & {
+          organizations:
+            | Database["public"]["Tables"]["organizations"]["Row"]
+            | null;
+          user_projects:
+            | {
+                project_id: string;
+                projects: Database["public"]["Tables"]["projects"]["Row"];
+              }[]
+            | null;
+        }
+      >;
 
       if (error) {
         console.error("API: Error fetching all users:", error);
@@ -131,11 +178,23 @@ export const userApi = {
   async getById(id: string): Promise<User | null> {
     try {
       console.log("API: Fetching user with ID:", id);
-      const { data, error } = await supabase
+      const { data, error } = (await supabase
         .from("profiles")
         .select("*, organizations(*), user_projects(project_id, projects(*))")
         .eq("id", id)
-        .single();
+        .single()) as SupabaseSingleResponse<
+        Database["public"]["Tables"]["profiles"]["Row"] & {
+          organizations:
+            | Database["public"]["Tables"]["organizations"]["Row"]
+            | null;
+          user_projects:
+            | {
+                project_id: string;
+                projects: Database["public"]["Tables"]["projects"]["Row"];
+              }[]
+            | null;
+        }
+      >;
 
       if (error) {
         console.error("API: Error fetching user:", error);
@@ -172,7 +231,7 @@ export const userApi = {
   }): Promise<User> {
     try {
       // 1. Create the user in auth.users
-      const { data: authData, error: authError } = await supabase.auth.signUp({
+      const { data: authData, error: authError } = (await supabase.auth.signUp({
         email: userData.email,
         password: userData.password,
         options: {
@@ -181,16 +240,16 @@ export const userApi = {
             role: userData.role || "user",
           },
         },
-      });
+      })) as SupabaseAuthResponse;
 
       if (authError) throw authError;
       if (!authData.user) throw new Error("Failed to create user");
 
       // 2. IMPORTANT: Create the user record in public.users FIRST
       // This is critical for RLS policies to work correctly
-      const { error: userError } = await supabase
+      const { error: userError } = (await supabase
         .from("users")
-        .insert([{ id: authData.user.id }]);
+        .insert([{ id: authData.user.id }])) as SupabaseResponse<any>;
 
       if (userError) {
         console.error("Error creating user record:", userError);
@@ -198,7 +257,7 @@ export const userApi = {
       }
 
       // 3. Create the profile record AFTER the user record exists
-      const { error: profileError } = await supabase.from("profiles").insert([
+      const { error: profileError } = (await supabase.from("profiles").insert([
         {
           id: authData.user.id,
           name: userData.name,
@@ -208,7 +267,7 @@ export const userApi = {
           organization_id: userData.organizationId,
           avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${userData.email}`,
         },
-      ]);
+      ])) as SupabaseResponse<any>;
 
       if (profileError) {
         console.error("Error creating profile:", profileError);
@@ -222,9 +281,9 @@ export const userApi = {
           project_id: projectId,
         }));
 
-        const { error: projectError } = await supabase
+        const { error: projectError } = (await supabase
           .from("user_projects")
-          .insert(projectAssociations);
+          .insert(projectAssociations)) as SupabaseResponse<any>;
 
         if (projectError) {
           console.error("Error associating projects:", projectError);
@@ -265,9 +324,9 @@ export const userApi = {
       // 1. Update password if provided
       if (updates.password) {
         const { error: passwordError } =
-          await supabase.auth.admin.updateUserById(id, {
+          (await supabase.auth.admin.updateUserById(id, {
             password: updates.password,
-          });
+          })) as SupabaseResponse<any>;
         if (passwordError) throw passwordError;
       }
 
@@ -280,10 +339,10 @@ export const userApi = {
         profileUpdates.organization_id = updates.organizationId;
 
       if (Object.keys(profileUpdates).length > 0) {
-        const { error: profileError } = await supabase
+        const { error: profileError } = (await supabase
           .from("profiles")
           .update(profileUpdates)
-          .eq("id", id);
+          .eq("id", id)) as SupabaseResponse<any>;
 
         if (profileError) throw profileError;
       }
@@ -291,10 +350,10 @@ export const userApi = {
       // 3. Update project associations if provided
       if (updates.projects) {
         // First delete existing associations
-        const { error: deleteError } = await supabase
+        const { error: deleteError } = (await supabase
           .from("user_projects")
           .delete()
-          .eq("user_id", id);
+          .eq("user_id", id)) as SupabaseResponse<any>;
 
         if (deleteError) throw deleteError;
 
@@ -305,9 +364,9 @@ export const userApi = {
             project_id: projectId,
           }));
 
-          const { error: insertError } = await supabase
+          const { error: insertError } = (await supabase
             .from("user_projects")
-            .insert(projectAssociations);
+            .insert(projectAssociations)) as SupabaseResponse<any>;
 
           if (insertError) throw insertError;
         }
@@ -321,23 +380,25 @@ export const userApi = {
   async delete(id: string): Promise<void> {
     try {
       // 1. Delete user projects associations
-      const { error: projectsError } = await supabase
+      const { error: projectsError } = (await supabase
         .from("user_projects")
         .delete()
-        .eq("user_id", id);
+        .eq("user_id", id)) as SupabaseResponse<any>;
 
       if (projectsError) throw projectsError;
 
       // 2. Delete profile
-      const { error: profileError } = await supabase
+      const { error: profileError } = (await supabase
         .from("profiles")
         .delete()
-        .eq("id", id);
+        .eq("id", id)) as SupabaseResponse<any>;
 
       if (profileError) throw profileError;
 
       // 3. Delete auth user
-      const { error: authError } = await supabase.auth.admin.deleteUser(id);
+      const { error: authError } = (await supabase.auth.admin.deleteUser(
+        id,
+      )) as SupabaseResponse<any>;
 
       if (authError) throw authError;
     } catch (error) {
@@ -352,10 +413,12 @@ export const organizationApi = {
   async getAll(): Promise<Organization[]> {
     try {
       console.log("API: Fetching all organizations");
-      const { data, error } = await supabase
+      const { data, error } = (await supabase
         .from("organizations")
         .select("*")
-        .order("created_at", { ascending: false });
+        .order("created_at", { ascending: false })) as SupabaseListResponse<
+        Database["public"]["Tables"]["organizations"]["Row"]
+      >;
 
       if (error) {
         // Check if it's a missing table error
@@ -384,10 +447,10 @@ export const organizationApi = {
           let projectCount = 0;
           try {
             const { count: projectsCount, error: projectsError } =
-              await supabase
+              (await supabase
                 .from("projects")
                 .select("*", { count: "exact", head: true })
-                .eq("organization_id", org.id);
+                .eq("organization_id", org.id)) as SupabaseCountResponse;
 
             if (!projectsError && projectsCount !== null) {
               projectCount = projectsCount;
@@ -411,10 +474,10 @@ export const organizationApi = {
           // Get member count
           let memberCount = 0;
           try {
-            const { count: membersCount, error: membersError } = await supabase
+            const { count: membersCount, error: membersError } = (await supabase
               .from("profiles")
               .select("*", { count: "exact", head: true })
-              .eq("organization_id", org.id);
+              .eq("organization_id", org.id)) as SupabaseCountResponse;
 
             if (!membersError && membersCount !== null) {
               memberCount = membersCount;
@@ -470,175 +533,229 @@ export const organizationApi = {
   async getById(id: string): Promise<Organization | null> {
     try {
       console.log("API: Fetching organization with ID:", id);
-      const { data, error } = await supabase
+      const { data, error } = (await supabase
         .from("organizations")
         .select("*")
         .eq("id", id)
-        .single();
+        .single()) as SupabaseSingleResponse<
+        Database["public"]["Tables"]["organizations"]["Row"]
+      >;
 
       if (error) {
+        if (error.code === "PGRST116") {
+          console.log(`Organization with ID ${id} not found`);
+          return null;
+        }
         console.error("API: Error fetching organization:", error);
         throw error;
       }
 
-      console.log("API: Organization data:", data);
+      // Get project count
+      let projectCount = 0;
+      try {
+        const { count, error: countError } = (await supabase
+          .from("projects")
+          .select("*", { count: "exact", head: true })
+          .eq("organization_id", id)) as SupabaseCountResponse;
 
-      if (data) {
-        // Get project count
-        let projectCount = 0;
-        try {
-          const { count: projectsCount, error: projectsError } = await supabase
-            .from("projects")
-            .select("*", { count: "exact", head: true })
-            .eq("organization_id", id);
-
-          if (!projectsError && projectsCount !== null) {
-            projectCount = projectsCount;
-            console.log(
-              `Found ${projectsCount} projects for organization ${id}`,
-            );
-          } else if (projectsError?.code === "42P01") {
-            console.warn(
-              "Projects table doesn't exist yet. This is expected if you haven't run the migration.",
-            );
-          } else if (projectsError) {
-            console.warn(
-              `Error fetching project count for organization ${id}:`,
-              projectsError,
-            );
-          }
-        } catch (countError) {
-          console.warn(
-            `Error fetching project count for organization ${id}:`,
-            countError,
-          );
+        if (!countError && count !== null) {
+          projectCount = count;
         }
-
-        // Get member count
-        let memberCount = 0;
-        try {
-          const { count: membersCount, error: membersError } = await supabase
-            .from("profiles")
-            .select("*", { count: "exact", head: true })
-            .eq("organization_id", id);
-
-          if (!membersError && membersCount !== null) {
-            memberCount = membersCount;
-            console.log(`Found ${membersCount} members for organization ${id}`);
-          } else if (membersError?.code === "42P01") {
-            console.warn(
-              "Profiles table doesn't exist yet. This is expected if you haven't run the migration.",
-            );
-          } else if (membersError) {
-            console.warn(
-              `Error fetching member count for organization ${id}:`,
-              membersError,
-            );
-          }
-        } catch (countError) {
-          console.warn(
-            `Error fetching member count for organization ${id}:`,
-            countError,
-          );
-        }
-
-        return {
-          ...data,
-          projectCount,
-          memberCount,
-        };
+      } catch (countError) {
+        console.warn(
+          `Error fetching project count for organization ${id}:`,
+          countError,
+        );
       }
 
-      return data;
+      // Get member count
+      let memberCount = 0;
+      try {
+        const { count, error: countError } = (await supabase
+          .from("profiles")
+          .select("*", { count: "exact", head: true })
+          .eq("organization_id", id)) as SupabaseCountResponse;
+
+        if (!countError && count !== null) {
+          memberCount = count;
+        }
+      } catch (countError) {
+        console.warn(
+          `Error fetching member count for organization ${id}:`,
+          countError,
+        );
+      }
+
+      return {
+        ...data,
+        projectCount,
+        memberCount,
+        is_default: false, // This field is not in the database but required by the interface
+        user_id: "", // This field is not in the database but required by the interface
+      };
     } catch (error) {
-      console.error("API: Exception in getById:", error);
+      console.error("API: Exception in getById organization:", error);
       throw error;
     }
   },
 
-  async create(organization: Partial<Organization>): Promise<Organization> {
-    const { data, error } = await supabase
-      .from("organizations")
-      .insert([organization])
-      .select()
-      .single();
+  async create(orgData: {
+    name: string;
+    description?: string;
+    logo?: string;
+    userId: string;
+  }): Promise<Organization> {
+    try {
+      console.log("API: Creating new organization");
+      const { data, error } = (await supabase
+        .from("organizations")
+        .insert([
+          {
+            name: orgData.name,
+            description: orgData.description || null,
+            logo: orgData.logo || null,
+          },
+        ])
+        .select()) as SupabaseListResponse<
+        Database["public"]["Tables"]["organizations"]["Row"]
+      >;
 
-    if (error) throw error;
-    return data;
+      if (error) {
+        console.error("API: Error creating organization:", error);
+        throw error;
+      }
+
+      if (!data || data.length === 0) {
+        throw new Error("Failed to create organization: No data returned");
+      }
+
+      const newOrg = data[0];
+      return {
+        ...newOrg,
+        is_default: false,
+        user_id: orgData.userId,
+        projectCount: 0,
+        memberCount: 0,
+      };
+    } catch (error) {
+      console.error("API: Exception in create organization:", error);
+      throw error;
+    }
   },
 
   async update(
     id: string,
-    updates: Partial<Organization>,
+    updates: {
+      name?: string;
+      description?: string;
+      logo?: string;
+    },
   ): Promise<Organization> {
-    const { data, error } = await supabase
-      .from("organizations")
-      .update(updates)
-      .eq("id", id)
-      .select()
-      .single();
+    try {
+      console.log("API: Updating organization with ID:", id);
+      const { data, error } = (await supabase
+        .from("organizations")
+        .update(updates)
+        .eq("id", id)
+        .select()) as SupabaseListResponse<
+        Database["public"]["Tables"]["organizations"]["Row"]
+      >;
 
-    if (error) throw error;
-    return data;
+      if (error) {
+        console.error("API: Error updating organization:", error);
+        throw error;
+      }
+
+      if (!data || data.length === 0) {
+        throw new Error(
+          `Failed to update organization with ID ${id}: No data returned`,
+        );
+      }
+
+      const updatedOrg = data[0];
+      return {
+        ...updatedOrg,
+        is_default: false, // This field is not in the database but required by the interface
+        user_id: "", // This field is not in the database but required by the interface
+        projectCount: 0,
+        memberCount: 0,
+      };
+    } catch (error) {
+      console.error("API: Exception in update organization:", error);
+      throw error;
+    }
   },
 
   async delete(id: string): Promise<void> {
-    const { error } = await supabase
-      .from("organizations")
-      .delete()
-      .eq("id", id);
+    try {
+      console.log("API: Deleting organization with ID:", id);
 
-    if (error) throw error;
-  },
+      // First update any profiles that reference this organization
+      const { error: profilesError } = (await supabase
+        .from("profiles")
+        .update({ organization_id: null })
+        .eq("organization_id", id)) as SupabaseResponse<any>;
 
-  async setDefault(id: string): Promise<void> {
-    // First, set all organizations to non-default
-    await supabase
-      .from("organizations")
-      .update({ is_default: false })
-      .neq("id", "placeholder");
+      if (profilesError) {
+        console.error(
+          "API: Error updating profiles for organization deletion:",
+          profilesError,
+        );
+        throw profilesError;
+      }
 
-    // Then set the selected organization as default
-    const { error } = await supabase
-      .from("organizations")
-      .update({ is_default: true })
-      .eq("id", id);
+      // Then update any projects that reference this organization
+      const { error: projectsError } = (await supabase
+        .from("projects")
+        .update({ organization_id: null })
+        .eq("organization_id", id)) as SupabaseResponse<any>;
 
-    if (error) throw error;
+      if (projectsError) {
+        console.error(
+          "API: Error updating projects for organization deletion:",
+          projectsError,
+        );
+        throw projectsError;
+      }
+
+      // Finally delete the organization
+      const { error } = (await supabase
+        .from("organizations")
+        .delete()
+        .eq("id", id)) as SupabaseResponse<any>;
+
+      if (error) {
+        console.error("API: Error deleting organization:", error);
+        throw error;
+      }
+    } catch (error) {
+      console.error("API: Exception in delete organization:", error);
+      throw error;
+    }
   },
 
   async getMembers(organizationId: string): Promise<OrganizationMember[]> {
     try {
       console.log("API: Fetching members for organization ID:", organizationId);
-      // Get profiles that have this organization_id
-      const { data, error } = await supabase
+      const { data, error } = (await supabase
         .from("profiles")
         .select("*")
-        .eq("organization_id", organizationId);
+        .eq("organization_id", organizationId)
+        .order("name")) as SupabaseListResponse<
+        Database["public"]["Tables"]["profiles"]["Row"]
+      >;
 
       if (error) {
-        // Check if it's a missing table error
-        if (
-          error.code === "42P01" &&
-          error.message.includes('relation "public.profiles" does not exist')
-        ) {
-          console.warn(
-            "Profiles table doesn't exist yet. This is expected if you haven't run the migration.",
-          );
-          return [];
-        }
-
         console.error("API: Error fetching organization members:", error);
         throw error;
       }
 
-      console.log(`API: Found ${data?.length || 0} organization members`);
       return (data || []).map((profile) => ({
         id: profile.id,
-        name: profile.name || "",
-        email: profile.email || "",
-        role: profile.role || "user",
-        jobTitle: profile.job_title,
+        name: profile.name,
+        email: profile.email,
+        role: profile.role,
+        jobTitle: profile.job_title || undefined,
         avatar:
           profile.avatar ||
           `https://api.dicebear.com/7.x/avataaars/svg?seed=${profile.email}`,
@@ -651,92 +768,512 @@ export const organizationApi = {
   },
 };
 
-// API functions for columns
-export const columnApi = {
-  async getByProjectId(projectId: string): Promise<Column[]> {
+// API functions for projects
+export const projectApi = {
+  async getAll(): Promise<Project[]> {
     try {
-      console.log(`API: Fetching columns for project ID: ${projectId}`);
-      const { data, error } = await supabase
-        .from("columns")
+      console.log("API: Fetching all projects");
+      const { data, error } = (await supabase
+        .from("projects")
         .select("*")
-        .eq("project_id", projectId)
-        .order("order", { ascending: true });
+        .order("created_at", { ascending: false })) as SupabaseListResponse<
+        Database["public"]["Tables"]["projects"]["Row"]
+      >;
 
       if (error) {
-        console.error("API: Error fetching columns:", error);
+        // Check if it's a missing table error
+        if (
+          error.code === "42P01" &&
+          error.message.includes('relation "public.projects" does not exist')
+        ) {
+          console.warn(
+            "Projects table doesn't exist yet. This is expected if you haven't run the migration.",
+          );
+          return [];
+        }
+
+        console.error("API: Error fetching all projects:", error);
         throw error;
       }
 
-      console.log(
-        `API: Found ${data?.length || 0} columns for project ${projectId}`,
-      );
+      console.log(`API: Found ${data?.length || 0} projects`);
       return data || [];
     } catch (error) {
-      console.error("API: Exception in getByProjectId:", error);
+      console.error("API: Exception in getAll projects:", error);
+
+      // Check if it's a missing table error
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        error.code === "42P01" &&
+        "message" in error &&
+        typeof error.message === "string" &&
+        error.message.includes('relation "public.projects" does not exist')
+      ) {
+        console.warn(
+          "Projects table doesn't exist yet. This is expected if you haven't run the migration.",
+        );
+        return [];
+      }
+
       throw error;
     }
   },
 
-  async create(column: {
-    title: string;
-    project_id: string;
-    user_id?: string; // Make user_id optional since we've fixed the database schema
-  }): Promise<Column> {
+  async getById(id: string): Promise<Project | null> {
     try {
-      // Get the maximum order value for columns in this project
-      const { data: orderData, error: orderError } = await supabase
-        .from("columns")
-        .select("order")
-        .eq("project_id", column.project_id)
-        .order("order", { ascending: false })
-        .limit(1);
+      console.log("API: Fetching project with ID:", id);
+      const { data, error } = (await supabase
+        .from("projects")
+        .select("*")
+        .eq("id", id)
+        .single()) as SupabaseSingleResponse<
+        Database["public"]["Tables"]["projects"]["Row"]
+      >;
 
-      if (orderError) {
-        console.error("API: Error getting max order:", orderError);
-        throw orderError;
+      if (error) {
+        if (error.code === "PGRST116") {
+          console.log(`Project with ID ${id} not found`);
+          return null;
+        }
+        console.error("API: Error fetching project:", error);
+        throw error;
       }
 
-      const maxOrder =
-        orderData && orderData.length > 0 ? orderData[0].order : 0;
+      return data;
+    } catch (error) {
+      console.error("API: Exception in getById project:", error);
+      throw error;
+    }
+  },
 
-      // Get current user if user_id is not provided
-      let userId = column.user_id;
-      if (!userId) {
-        try {
-          const {
-            data: { user },
-          } = await supabase.auth.getUser();
-          userId = user?.id;
-        } catch (userError) {
-          console.warn("API: Could not get current user:", userError);
-          // Continue without user_id
+  async getByUserId(userId: string): Promise<Project[]> {
+    try {
+      console.log("API: Fetching projects for user ID:", userId);
+
+      // First try to get projects directly owned by the user
+      const { data: ownedProjects, error: ownedError } = (await supabase
+        .from("projects")
+        .select("*")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })) as SupabaseListResponse<
+        Database["public"]["Tables"]["projects"]["Row"]
+      >;
+
+      if (ownedError) {
+        console.error("API: Error fetching owned projects:", ownedError);
+        throw ownedError;
+      }
+
+      // Then get projects the user is associated with through user_projects
+      const { data: associatedData, error: associatedError } = (await supabase
+        .from("user_projects")
+        .select("project_id, projects(*)")
+        .eq("user_id", userId)) as SupabaseListResponse<{
+        project_id: string;
+        projects: Database["public"]["Tables"]["projects"]["Row"];
+      }>;
+
+      if (associatedError) {
+        console.error(
+          "API: Error fetching associated projects:",
+          associatedError,
+        );
+        throw associatedError;
+      }
+
+      // Extract the projects from the associated data
+      const associatedProjects = (associatedData || [])
+        .map((item) => item.projects)
+        .filter(
+          (
+            project,
+          ): project is Database["public"]["Tables"]["projects"]["Row"] =>
+            !!project,
+        );
+
+      // Combine the two lists, removing duplicates by ID
+      const allProjects = [...(ownedProjects || [])];
+
+      // Add associated projects that aren't already in the list
+      for (const project of associatedProjects) {
+        if (!allProjects.some((p) => p.id === project.id)) {
+          allProjects.push(project);
         }
       }
 
-      // Create the column with the next order value
-      const columnData = {
+      return allProjects;
+    } catch (error) {
+      console.error("API: Exception in getByUserId projects:", error);
+      throw error;
+    }
+  },
+
+  async getByOrganizationId(organizationId: string): Promise<Project[]> {
+    try {
+      console.log(
+        "API: Fetching projects for organization ID:",
+        organizationId,
+      );
+      const { data, error } = (await supabase
+        .from("projects")
+        .select("*")
+        .eq("organization_id", organizationId)
+        .order("created_at", { ascending: false })) as SupabaseListResponse<
+        Database["public"]["Tables"]["projects"]["Row"]
+      >;
+
+      if (error) {
+        console.error("API: Error fetching organization projects:", error);
+        throw error;
+      }
+
+      return data || [];
+    } catch (error) {
+      console.error("API: Exception in getByOrganizationId projects:", error);
+      throw error;
+    }
+  },
+
+  async create(projectData: {
+    title: string;
+    description?: string;
+    organizationId?: string;
+    userId: string;
+    isFavorite?: boolean;
+  }): Promise<Project> {
+    try {
+      console.log("API: Creating new project");
+      const { data, error } = (await supabase
+        .from("projects")
+        .insert([
+          {
+            title: projectData.title,
+            description: projectData.description || null,
+            organization_id: projectData.organizationId || null,
+            user_id: projectData.userId,
+            is_favorite: projectData.isFavorite || false,
+          },
+        ])
+        .select()) as SupabaseListResponse<
+        Database["public"]["Tables"]["projects"]["Row"]
+      >;
+
+      if (error) {
+        console.error("API: Error creating project:", error);
+        throw error;
+      }
+
+      if (!data || data.length === 0) {
+        throw new Error("Failed to create project: No data returned");
+      }
+
+      const newProject = data[0];
+
+      // Create default columns for the new project
+      try {
+        await this.createDefaultColumns(newProject.id);
+      } catch (columnError) {
+        console.error("API: Error creating default columns:", columnError);
+        // Continue even if column creation fails
+      }
+
+      return newProject;
+    } catch (error) {
+      console.error("API: Exception in create project:", error);
+      throw error;
+    }
+  },
+
+  async createDefaultColumns(projectId: string): Promise<void> {
+    try {
+      console.log("API: Creating default columns for project ID:", projectId);
+      const defaultColumns = [
+        { title: "Backlog", order: 0 },
+        { title: "In Progress", order: 1 },
+        { title: "Completed", order: 2 },
+      ];
+
+      const columnsToInsert = defaultColumns.map((column) => ({
         title: column.title,
-        project_id: column.project_id,
-        order: maxOrder + 1,
-      };
+        project_id: projectId,
+        order: column.order,
+      }));
 
-      // Don't include user_id at all since the column doesn't exist
-
-      const { data, error } = await supabase
+      const { error } = (await supabase
         .from("columns")
-        .insert([columnData])
-        .select()
-        .single();
+        .insert(columnsToInsert)) as SupabaseResponse<any>;
+
+      if (error) {
+        console.error("API: Error creating default columns:", error);
+        throw error;
+      }
+    } catch (error) {
+      console.error("API: Exception in createDefaultColumns:", error);
+      throw error;
+    }
+  },
+
+  async update(
+    id: string,
+    updates: {
+      title?: string;
+      description?: string;
+      organizationId?: string | null;
+      isFavorite?: boolean;
+    },
+  ): Promise<Project> {
+    try {
+      console.log("API: Updating project with ID:", id);
+
+      // Convert the updates to match the database column names
+      const dbUpdates: Partial<
+        Database["public"]["Tables"]["projects"]["Update"]
+      > = {};
+      if (updates.title !== undefined) dbUpdates.title = updates.title;
+      if (updates.description !== undefined)
+        dbUpdates.description = updates.description;
+      if (updates.organizationId !== undefined)
+        dbUpdates.organization_id = updates.organizationId;
+      if (updates.isFavorite !== undefined)
+        dbUpdates.is_favorite = updates.isFavorite;
+
+      const { data, error } = (await supabase
+        .from("projects")
+        .update(dbUpdates)
+        .eq("id", id)
+        .select()) as SupabaseListResponse<
+        Database["public"]["Tables"]["projects"]["Row"]
+      >;
+
+      if (error) {
+        console.error("API: Error updating project:", error);
+        throw error;
+      }
+
+      if (!data || data.length === 0) {
+        throw new Error(
+          `Failed to update project with ID ${id}: No data returned`,
+        );
+      }
+
+      return data[0];
+    } catch (error) {
+      console.error("API: Exception in update project:", error);
+      throw error;
+    }
+  },
+
+  async delete(id: string): Promise<void> {
+    try {
+      console.log("API: Deleting project with ID:", id);
+
+      // First delete all columns (which will cascade to tasks)
+      const { error: columnsError } = (await supabase
+        .from("columns")
+        .delete()
+        .eq("project_id", id)) as SupabaseResponse<any>;
+
+      if (columnsError) {
+        console.error("API: Error deleting project columns:", columnsError);
+        throw columnsError;
+      }
+
+      // Delete user project associations
+      const { error: userProjectsError } = (await supabase
+        .from("user_projects")
+        .delete()
+        .eq("project_id", id)) as SupabaseResponse<any>;
+
+      if (userProjectsError) {
+        console.error(
+          "API: Error deleting user project associations:",
+          userProjectsError,
+        );
+        throw userProjectsError;
+      }
+
+      // Finally delete the project
+      const { error } = (await supabase
+        .from("projects")
+        .delete()
+        .eq("id", id)) as SupabaseResponse<any>;
+
+      if (error) {
+        console.error("API: Error deleting project:", error);
+        throw error;
+      }
+    } catch (error) {
+      console.error("API: Exception in delete project:", error);
+      throw error;
+    }
+  },
+
+  async addUser(projectId: string, userId: string): Promise<void> {
+    try {
+      console.log(`API: Adding user ${userId} to project ${projectId}`);
+      const { error } = (await supabase.from("user_projects").insert([
+        {
+          user_id: userId,
+          project_id: projectId,
+        },
+      ])) as SupabaseResponse<any>;
+
+      if (error) {
+        // Check if it's a duplicate key error
+        if (error.code === "23505") {
+          console.log(
+            `User ${userId} is already associated with project ${projectId}`,
+          );
+          return;
+        }
+        console.error("API: Error adding user to project:", error);
+        throw error;
+      }
+    } catch (error) {
+      console.error("API: Exception in addUser to project:", error);
+      throw error;
+    }
+  },
+
+  async removeUser(projectId: string, userId: string): Promise<void> {
+    try {
+      console.log(`API: Removing user ${userId} from project ${projectId}`);
+      const { error } = (await supabase
+        .from("user_projects")
+        .delete()
+        .eq("project_id", projectId)
+        .eq("user_id", userId)) as SupabaseResponse<any>;
+
+      if (error) {
+        console.error("API: Error removing user from project:", error);
+        throw error;
+      }
+    } catch (error) {
+      console.error("API: Exception in removeUser from project:", error);
+      throw error;
+    }
+  },
+
+  async getUsers(projectId: string): Promise<User[]> {
+    try {
+      console.log("API: Fetching users for project ID:", projectId);
+      const { data, error } = (await supabase
+        .from("user_projects")
+        .select("user_id, profiles(*)")
+        .eq("project_id", projectId)) as SupabaseListResponse<{
+        user_id: string;
+        profiles: Database["public"]["Tables"]["profiles"]["Row"];
+      }>;
+
+      if (error) {
+        console.error("API: Error fetching project users:", error);
+        throw error;
+      }
+
+      return (data || [])
+        .filter((item) => item.profiles) // Filter out any null profiles
+        .map((item) => ({
+          id: item.profiles.id,
+          name: item.profiles.name,
+          email: item.profiles.email,
+          role: item.profiles.role as UserRole,
+          jobTitle: item.profiles.job_title || undefined,
+          organizationId: item.profiles.organization_id || undefined,
+          avatar:
+            item.profiles.avatar ||
+            `https://api.dicebear.com/7.x/avataaars/svg?seed=${item.profiles.email}`,
+        }));
+    } catch (error) {
+      console.error("API: Exception in getUsers for project:", error);
+      throw error;
+    }
+  },
+};
+
+// API functions for columns
+export const columnApi = {
+  async getByProjectId(projectId: string): Promise<Column[]> {
+    try {
+      console.log("API: Fetching columns for project ID:", projectId);
+      const { data, error } = (await supabase
+        .from("columns")
+        .select("*")
+        .eq("project_id", projectId)
+        .order("order")) as SupabaseListResponse<
+        Database["public"]["Tables"]["columns"]["Row"]
+      >;
+
+      if (error) {
+        console.error("API: Error fetching project columns:", error);
+        throw error;
+      }
+
+      return data || [];
+    } catch (error) {
+      console.error("API: Exception in getByProjectId columns:", error);
+      throw error;
+    }
+  },
+
+  async getById(id: string): Promise<Column | null> {
+    try {
+      console.log("API: Fetching column with ID:", id);
+      const { data, error } = (await supabase
+        .from("columns")
+        .select("*")
+        .eq("id", id)
+        .single()) as SupabaseSingleResponse<
+        Database["public"]["Tables"]["columns"]["Row"]
+      >;
+
+      if (error) {
+        if (error.code === "PGRST116") {
+          console.log(`Column with ID ${id} not found`);
+          return null;
+        }
+        console.error("API: Error fetching column:", error);
+        throw error;
+      }
+
+      return data;
+    } catch (error) {
+      console.error("API: Exception in getById column:", error);
+      throw error;
+    }
+  },
+
+  async create(columnData: {
+    title: string;
+    projectId: string;
+    order: number;
+  }): Promise<Column> {
+    try {
+      console.log("API: Creating new column");
+      const { data, error } = (await supabase
+        .from("columns")
+        .insert([
+          {
+            title: columnData.title,
+            project_id: columnData.projectId,
+            order: columnData.order,
+          },
+        ])
+        .select()) as SupabaseListResponse<
+        Database["public"]["Tables"]["columns"]["Row"]
+      >;
 
       if (error) {
         console.error("API: Error creating column:", error);
         throw error;
       }
 
-      console.log(
-        `API: Created column ${data.id} for project ${column.project_id}`,
-      );
-      return data;
+      if (!data || data.length === 0) {
+        throw new Error("Failed to create column: No data returned");
+      }
+
+      return data[0];
     } catch (error) {
       console.error("API: Exception in create column:", error);
       throw error;
@@ -745,23 +1282,33 @@ export const columnApi = {
 
   async update(
     id: string,
-    updates: { title?: string; order?: number },
+    updates: {
+      title?: string;
+      order?: number;
+    },
   ): Promise<Column> {
     try {
-      const { data, error } = await supabase
+      console.log("API: Updating column with ID:", id);
+      const { data, error } = (await supabase
         .from("columns")
         .update(updates)
         .eq("id", id)
-        .select()
-        .single();
+        .select()) as SupabaseListResponse<
+        Database["public"]["Tables"]["columns"]["Row"]
+      >;
 
       if (error) {
         console.error("API: Error updating column:", error);
         throw error;
       }
 
-      console.log(`API: Updated column ${id}`);
-      return data;
+      if (!data || data.length === 0) {
+        throw new Error(
+          `Failed to update column with ID ${id}: No data returned`,
+        );
+      }
+
+      return data[0];
     } catch (error) {
       console.error("API: Exception in update column:", error);
       throw error;
@@ -770,317 +1317,76 @@ export const columnApi = {
 
   async delete(id: string): Promise<void> {
     try {
-      // No special handling for deleting Completed column
+      console.log("API: Deleting column with ID:", id);
 
-      // Delete the column if it's not a Completed column
-      const { error } = await supabase.from("columns").delete().eq("id", id);
+      // First get the column to check its project_id and order
+      const { data: column, error: getError } = (await supabase
+        .from("columns")
+        .select("project_id, order")
+        .eq("id", id)
+        .single()) as SupabaseSingleResponse<{
+        project_id: string;
+        order: number;
+      }>;
 
-      if (error) {
-        console.error("API: Error deleting column:", error);
-        throw error;
+      if (getError) {
+        console.error("API: Error fetching column for deletion:", getError);
+        throw getError;
       }
 
-      console.log(`API: Deleted column ${id}`);
+      // Delete the column
+      const { error: deleteError } = (await supabase
+        .from("columns")
+        .delete()
+        .eq("id", id)) as SupabaseResponse<any>;
+
+      if (deleteError) {
+        console.error("API: Error deleting column:", deleteError);
+        throw deleteError;
+      }
+
+      // Update the order of remaining columns
+      const { error: updateError } = (await supabase
+        .from("columns")
+        .update({ order: supabase.sql`order - 1` })
+        .eq("project_id", column.project_id)
+        .gt("order", column.order)) as SupabaseResponse<any>;
+
+      if (updateError) {
+        console.error(
+          "API: Error updating column orders after deletion:",
+          updateError,
+        );
+        // Don't throw here, as the main deletion was successful
+      }
     } catch (error) {
       console.error("API: Exception in delete column:", error);
       throw error;
     }
   },
 
-  async reorder(columns: { id: string; order: number }[]): Promise<void> {
+  async reorder(
+    projectId: string,
+    columnOrders: { id: string; order: number }[],
+  ): Promise<void> {
     try {
+      console.log("API: Reordering columns for project ID:", projectId);
+
       // Update each column's order in a transaction
-      for (const column of columns) {
-        const { error } = await supabase
+      for (const { id, order } of columnOrders) {
+        const { error } = (await supabase
           .from("columns")
-          .update({ order: column.order })
-          .eq("id", column.id);
+          .update({ order })
+          .eq("id", id)
+          .eq("project_id", projectId)) as SupabaseResponse<any>;
 
         if (error) {
-          console.error(`API: Error reordering column ${column.id}:`, error);
+          console.error(`API: Error updating order for column ${id}:`, error);
           throw error;
         }
       }
-
-      console.log(`API: Reordered ${columns.length} columns`);
     } catch (error) {
       console.error("API: Exception in reorder columns:", error);
-      throw error;
-    }
-  },
-
-  // Removed ensureCompletedColumn and callEnsureCompletedColumnFunction
-};
-
-// API functions for task files
-export const taskFileApi = {
-  async getByTaskId(taskId: string): Promise<TaskFile[]> {
-    try {
-      console.log(`API: Fetching files for task ID: ${taskId}`);
-      const { data, error } = await supabase
-        .from("task_files")
-        .select("*")
-        .eq("task_id", taskId);
-
-      if (error) {
-        console.error("API: Error fetching task files:", error);
-        throw error;
-      }
-
-      console.log(`API: Found ${data?.length || 0} files for task ${taskId}`);
-      return data || [];
-    } catch (error) {
-      console.error("API: Exception in getByTaskId:", error);
-      throw error;
-    }
-  },
-
-  async uploadFile(file: File, taskId: string): Promise<TaskFile> {
-    try {
-      // 1. First, ensure the task_files bucket and table exist by calling our edge function
-      try {
-        console.log("API: Ensuring task_files bucket and table exist");
-        const { data: setupData, error: setupError } =
-          await supabase.functions.invoke("create_task_files_bucket");
-
-        if (setupError) {
-          console.error(
-            "API: Error setting up task_files resources:",
-            setupError,
-          );
-        } else {
-          console.log("API: Task files setup result:", setupData);
-        }
-      } catch (setupError) {
-        console.error("API: Exception in task files setup:", setupError);
-        // Continue anyway, we'll try the upload
-      }
-
-      // 2. Upload file to storage
-      const fileExt = file.name.split(".").pop() || "";
-      const fileName = `${taskId}/${Date.now()}-${Math.random().toString(36).substring(2, 15)}.${fileExt}`;
-
-      console.log(`API: Uploading file to task_files/${fileName}`);
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from("task_files")
-        .upload(fileName, file, {
-          cacheControl: "3600",
-          upsert: true,
-        });
-
-      if (uploadError) {
-        console.error("API: Error uploading file:", uploadError);
-
-        // Check for specific error types
-        if (
-          uploadError.message &&
-          uploadError.message.includes("bucket not found")
-        ) {
-          throw new Error(
-            "The task_files storage bucket does not exist. Please run the migrations to create it.",
-          );
-        }
-
-        if (
-          uploadError.message &&
-          uploadError.message.includes("row-level security")
-        ) {
-          throw new Error(
-            "Row-level security policy violation when uploading to storage. Please check the storage RLS policies.",
-          );
-        }
-
-        throw uploadError;
-      }
-
-      // 3. Get public URL
-      const {
-        data: { publicUrl },
-      } = supabase.storage.from("task_files").getPublicUrl(fileName);
-
-      console.log(`API: Generated public URL: ${publicUrl}`);
-
-      // 4. Create record in task_files table
-      const fileRecord = {
-        task_id: taskId,
-        file_name: file.name,
-        file_type: file.type,
-        file_size: file.size,
-        file_url: publicUrl,
-      };
-
-      console.log(`API: Creating file record in database:`, fileRecord);
-
-      // Try to insert the record directly
-      try {
-        console.log(
-          "API: Attempting to insert file record into task_files table",
-        );
-
-        // Try to insert the record
-        const { data, error } = await supabase
-          .from("task_files")
-          .insert([fileRecord])
-          .select()
-          .single();
-
-        if (error) {
-          console.error("API: Error creating file record:", error);
-
-          // If we get a 404 or table doesn't exist error
-          if (
-            error.code === "PGRST116" ||
-            error.code === "404" ||
-            error.message?.includes('relation "task_files" does not exist')
-          ) {
-            // Try to run the edge function to create the table
-            console.log(
-              "API: Table doesn't exist, trying to create it via edge function",
-            );
-
-            try {
-              const { data: setupData, error: setupError } =
-                await supabase.functions.invoke("create_task_files_bucket");
-
-              if (setupError) {
-                console.error(
-                  "API: Error setting up task_files resources:",
-                  setupError,
-                );
-                console.log("API: Will try to continue anyway");
-              } else {
-                console.log(
-                  "API: Successfully invoked create_task_files_bucket function",
-                  setupData,
-                );
-              }
-            } catch (invokeError) {
-              console.error("API: Error invoking edge function:", invokeError);
-              console.log("API: Will try to continue anyway");
-            }
-
-            // Wait a moment for the table to be created
-            await new Promise((resolve) => setTimeout(resolve, 1000));
-
-            // Try the insert again after creating the table
-            console.log("API: Retrying insert after table creation attempt");
-            const { data: retryData, error: retryError } = await supabase
-              .from("task_files")
-              .insert([fileRecord])
-              .select()
-              .single();
-
-            if (retryError) {
-              console.error(
-                "API: Error on retry creating file record:",
-                retryError,
-              );
-
-              // If we still get a table doesn't exist error, provide a more helpful message
-              if (
-                retryError.code === "PGRST116" ||
-                retryError.code === "404" ||
-                retryError.message?.includes(
-                  'relation "task_files" does not exist',
-                )
-              ) {
-                throw new Error(
-                  "The task_files table does not exist after multiple attempts. The migration may not have run successfully. Please check the Supabase dashboard.",
-                );
-              }
-
-              throw retryError;
-            }
-
-            console.log(
-              `API: Successfully uploaded file for task ${taskId} on retry:`,
-              retryData,
-            );
-            return retryData;
-          }
-
-          // If we get an RLS error, the policies might not be set correctly
-          if (error.code === "42501") {
-            throw new Error(
-              "Row-level security policy violation when creating file record. Please check the RLS policies.",
-            );
-          }
-
-          throw error;
-        }
-
-        console.log(
-          `API: Successfully uploaded file for task ${taskId}:`,
-          data,
-        );
-        return data;
-      } catch (dbError) {
-        // If there's a database error, we should clean up the uploaded file
-        try {
-          await supabase.storage.from("task_files").remove([fileName]);
-          console.log(
-            `API: Cleaned up uploaded file after database error: ${fileName}`,
-          );
-        } catch (cleanupError) {
-          console.error(
-            "API: Failed to clean up uploaded file after error:",
-            cleanupError,
-          );
-        }
-        throw dbError;
-      }
-    } catch (error) {
-      console.error(
-        "API: Exception in uploadFile:",
-        error,
-        typeof error === "object" ? JSON.stringify(error) : "",
-      );
-      throw error;
-    }
-  },
-
-  async deleteFile(fileId: string): Promise<void> {
-    try {
-      // 1. Get the file record to get the file path
-      const { data: fileData, error: fileError } = await supabase
-        .from("task_files")
-        .select("*")
-        .eq("id", fileId)
-        .single();
-
-      if (fileError) {
-        console.error("API: Error fetching file record:", fileError);
-        throw fileError;
-      }
-
-      // 2. Delete from storage
-      // Extract the path from the URL
-      const fileUrl = fileData.file_url;
-      const filePath = fileUrl.split("/").slice(-2).join("/");
-
-      const { error: storageError } = await supabase.storage
-        .from("task_files")
-        .remove([filePath]);
-
-      if (storageError) {
-        console.error("API: Error deleting file from storage:", storageError);
-        // Continue to delete the record even if storage deletion fails
-      }
-
-      // 3. Delete the record
-      const { error } = await supabase
-        .from("task_files")
-        .delete()
-        .eq("id", fileId);
-
-      if (error) {
-        console.error("API: Error deleting file record:", error);
-        throw error;
-      }
-
-      console.log(`API: Deleted file ${fileId}`);
-    } catch (error) {
-      console.error("API: Exception in deleteFile:", error);
       throw error;
     }
   },
@@ -1090,193 +1396,226 @@ export const taskFileApi = {
 export const taskApi = {
   async getByColumnId(columnId: string): Promise<Task[]> {
     try {
-      console.log(`API: Fetching tasks for column ID: ${columnId}`);
-      const { data, error } = await supabase
+      console.log("API: Fetching tasks for column ID:", columnId);
+      const { data, error } = (await supabase
         .from("tasks")
-        .select(
-          "*, task_labels(label_id, labels(*)), task_assignees(user_id, profiles(*))",
-        )
+        .select("*")
         .eq("column_id", columnId)
-        .order("order", { ascending: true });
+        .order("order")) as SupabaseListResponse<
+        Database["public"]["Tables"]["tasks"]["Row"]
+      >;
 
       if (error) {
-        console.error("API: Error fetching tasks:", error);
+        console.error("API: Error fetching column tasks:", error);
         throw error;
       }
 
-      console.log(
-        `API: Found ${data?.length || 0} tasks for column ${columnId}`,
-      );
-
-      // Process the data to extract labels and assignees
-      const tasksWithRelations = await Promise.all(
-        (data || []).map(async (task) => {
-          // Extract labels from task_labels join
-          const labels = task.task_labels
-            ? task.task_labels.map((tl: any) => ({
-                id: tl.label_id,
-                name: tl.labels?.name || "",
-                color: tl.labels?.color || "#cccccc",
-                created_at: tl.labels?.created_at || new Date().toISOString(),
-              }))
-            : [];
-
-          // Extract assignees from task_assignees join
-          const assignees = task.task_assignees
-            ? task.task_assignees.map((ta: any) => ({
-                id: ta.user_id,
-                name: ta.profiles?.name || "",
-                email: ta.profiles?.email || "",
-                role: ta.profiles?.role || "user",
-                avatar:
-                  ta.profiles?.avatar ||
-                  `https://api.dicebear.com/7.x/avataaars/svg?seed=${ta.profiles?.email || "user"}`,
-              }))
-            : [];
-
-          // Get files for this task
-          let files: TaskFile[] = [];
-          try {
-            files = await taskFileApi.getByTaskId(task.id);
-          } catch (fileError) {
-            console.warn(
-              `Could not fetch files for task ${task.id}:`,
-              fileError,
-            );
-          }
-
-          // Return the task with processed labels and assignees
-          return {
-            ...task,
-            labels,
-            assignees,
-            files,
-            // Remove the join tables from the final object
-            task_labels: undefined,
-            task_assignees: undefined,
-          };
-        }),
-      );
-
-      return tasksWithRelations;
+      return data || [];
     } catch (error) {
-      console.error("API: Exception in getByColumnId:", error);
+      console.error("API: Exception in getByColumnId tasks:", error);
       throw error;
     }
   },
 
-  async getById(taskId: string): Promise<Task | null> {
+  async getByProjectId(projectId: string): Promise<Task[]> {
     try {
-      console.log(`API: Fetching task with ID: ${taskId}`);
-      const { data, error } = await supabase
+      console.log("API: Fetching tasks for project ID:", projectId);
+      const { data, error } = (await supabase
         .from("tasks")
-        .select(
-          "*, task_labels(label_id, labels(*)), task_assignees(user_id, profiles(*))",
-        )
-        .eq("id", taskId)
-        .single();
+        .select("*")
+        .eq("project_id", projectId)
+        .order("created_at", { ascending: false })) as SupabaseListResponse<
+        Database["public"]["Tables"]["tasks"]["Row"]
+      >;
 
       if (error) {
+        console.error("API: Error fetching project tasks:", error);
+        throw error;
+      }
+
+      return data || [];
+    } catch (error) {
+      console.error("API: Exception in getByProjectId tasks:", error);
+      throw error;
+    }
+  },
+
+  async getById(id: string): Promise<Task | null> {
+    try {
+      console.log("API: Fetching task with ID:", id);
+      const { data, error } = (await supabase
+        .from("tasks")
+        .select("*")
+        .eq("id", id)
+        .single()) as SupabaseSingleResponse<
+        Database["public"]["Tables"]["tasks"]["Row"]
+      >;
+
+      if (error) {
+        if (error.code === "PGRST116") {
+          console.log(`Task with ID ${id} not found`);
+          return null;
+        }
         console.error("API: Error fetching task:", error);
         throw error;
       }
 
-      // Extract labels from task_labels join
-      const labels = data.task_labels
-        ? data.task_labels.map((tl: any) => ({
-            id: tl.label_id,
-            name: tl.labels?.name || "",
-            color: tl.labels?.color || "#cccccc",
-            created_at: tl.labels?.created_at || new Date().toISOString(),
-          }))
-        : [];
+      // Get task labels
+      const { data: labelData, error: labelError } = (await supabase
+        .from("task_labels")
+        .select("label_id, labels(*)")
+        .eq("task_id", id)) as SupabaseListResponse<{
+        label_id: string;
+        labels: Database["public"]["Tables"]["labels"]["Row"];
+      }>;
 
-      // Extract assignees from task_assignees join
-      const assignees = data.task_assignees
-        ? data.task_assignees.map((ta: any) => ({
-            id: ta.user_id,
-            name: ta.profiles?.name || "",
-            email: ta.profiles?.email || "",
-            role: ta.profiles?.role || "user",
-            avatar:
-              ta.profiles?.avatar ||
-              `https://api.dicebear.com/7.x/avataaars/svg?seed=${ta.profiles?.email || "user"}`,
-          }))
-        : [];
-
-      // Get files for this task
-      let files: TaskFile[] = [];
-      try {
-        files = await taskFileApi.getByTaskId(taskId);
-      } catch (fileError) {
-        console.warn(`Could not fetch files for task ${taskId}:`, fileError);
+      if (labelError) {
+        console.warn("API: Error fetching task labels:", labelError);
       }
 
-      // Return the task with processed labels and assignees
+      const labels = labelData
+        ? labelData.filter((item) => item.labels).map((item) => item.labels)
+        : [];
+
+      // Get task assignees
+      const { data: assigneeData, error: assigneeError } = (await supabase
+        .from("task_assignees")
+        .select("user_id, profiles(*)")
+        .eq("task_id", id)) as SupabaseListResponse<{
+        user_id: string;
+        profiles: Database["public"]["Tables"]["profiles"]["Row"];
+      }>;
+
+      if (assigneeError) {
+        console.warn("API: Error fetching task assignees:", assigneeError);
+      }
+
+      const assignees = assigneeData
+        ? assigneeData
+            .filter((item) => item.profiles)
+            .map((item) => ({
+              id: item.profiles.id,
+              name: item.profiles.name,
+              email: item.profiles.email,
+              role: item.profiles.role as UserRole,
+              jobTitle: item.profiles.job_title || undefined,
+              organizationId: item.profiles.organization_id || undefined,
+              avatar:
+                item.profiles.avatar ||
+                `https://api.dicebear.com/7.x/avataaars/svg?seed=${item.profiles.email}`,
+            }))
+        : [];
+
+      // Get task files
+      const { data: fileData, error: fileError } = (await supabase
+        .from("task_files")
+        .select("*")
+        .eq("task_id", id)) as SupabaseListResponse<
+        Database["public"]["Tables"]["task_files"]["Row"]
+      >;
+
+      if (fileError) {
+        console.warn("API: Error fetching task files:", fileError);
+      }
+
       return {
         ...data,
         labels,
         assignees,
-        files,
-        // Remove the join tables from the final object
-        task_labels: undefined,
-        task_assignees: undefined,
+        files: fileData || [],
       };
     } catch (error) {
-      console.error("API: Exception in getById:", error);
-      return null;
+      console.error("API: Exception in getById task:", error);
+      throw error;
     }
   },
 
-  async create(task: {
+  async create(taskData: {
     title: string;
     description?: string;
-    due_date?: string | null;
-    column_id: string;
-    project_id: string;
-    user_id?: string;
+    columnId: string;
+    projectId: string;
+    userId: string;
+    order: number;
+    dueDate?: string;
+    labelIds?: string[];
+    assigneeIds?: string[];
   }): Promise<Task> {
     try {
-      // Get the maximum order value for tasks in this column
-      const { data: orderData, error: orderError } = await supabase
-        .from("tasks")
-        .select("order")
-        .eq("column_id", task.column_id)
-        .order("order", { ascending: false })
-        .limit(1);
-
-      if (orderError) {
-        console.error("API: Error getting max order:", orderError);
-        throw orderError;
-      }
-
-      const maxOrder =
-        orderData && orderData.length > 0 ? orderData[0].order : 0;
-
-      // Create the task with the next order value
-      const { data, error } = await supabase
+      console.log("API: Creating new task");
+      const { data, error } = (await supabase
         .from("tasks")
         .insert([
           {
-            title: task.title,
-            description: task.description || "",
-            due_date: task.due_date,
-            column_id: task.column_id,
-            project_id: task.project_id,
-            user_id: task.user_id,
-            order: maxOrder + 1,
+            title: taskData.title,
+            description: taskData.description || null,
+            column_id: taskData.columnId,
+            project_id: taskData.projectId,
+            user_id: taskData.userId,
+            order: taskData.order,
+            due_date: taskData.dueDate || null,
+            is_completed: false,
           },
         ])
-        .select()
-        .single();
+        .select()) as SupabaseListResponse<
+        Database["public"]["Tables"]["tasks"]["Row"]
+      >;
 
       if (error) {
         console.error("API: Error creating task:", error);
         throw error;
       }
 
-      console.log(`API: Created task ${data.id} for column ${task.column_id}`);
-      return data;
+      if (!data || data.length === 0) {
+        throw new Error("Failed to create task: No data returned");
+      }
+
+      const newTask = data[0];
+
+      // Add labels if provided
+      if (taskData.labelIds && taskData.labelIds.length > 0) {
+        const labelAssociations = taskData.labelIds.map((labelId) => ({
+          task_id: newTask.id,
+          label_id: labelId,
+        }));
+
+        const { error: labelError } = (await supabase
+          .from("task_labels")
+          .insert(labelAssociations)) as SupabaseResponse<any>;
+
+        if (labelError) {
+          console.error("API: Error associating labels with task:", labelError);
+          // Continue even if label association fails
+        }
+      }
+
+      // Add assignees if provided
+      if (taskData.assigneeIds && taskData.assigneeIds.length > 0) {
+        const assigneeAssociations = taskData.assigneeIds.map((userId) => ({
+          task_id: newTask.id,
+          user_id: userId,
+        }));
+
+        const { error: assigneeError } = (await supabase
+          .from("task_assignees")
+          .insert(assigneeAssociations)) as SupabaseResponse<any>;
+
+        if (assigneeError) {
+          console.error(
+            "API: Error associating assignees with task:",
+            assigneeError,
+          );
+          // Continue even if assignee association fails
+        }
+      }
+
+      // Return the created task with empty arrays for related entities
+      return {
+        ...newTask,
+        labels: [],
+        assignees: [],
+        files: [],
+      };
     } catch (error) {
       console.error("API: Exception in create task:", error);
       throw error;
@@ -1287,34 +1626,138 @@ export const taskApi = {
     id: string,
     updates: {
       title?: string;
-      description?: string;
-      due_date?: string | null;
+      description?: string | null;
+      columnId?: string;
       order?: number;
-      is_completed?: boolean;
+      dueDate?: string | null;
+      isCompleted?: boolean;
+      completedAt?: string | null;
+      labelIds?: string[];
+      assigneeIds?: string[];
     },
   ): Promise<Task> {
     try {
-      // If task is being marked as completed, set completed_at timestamp
-      if (updates.is_completed) {
-        updates = { ...updates, completed_at: new Date().toISOString() };
-      } else if (updates.is_completed === false) {
-        updates = { ...updates, completed_at: null };
+      console.log("API: Updating task with ID:", id);
+
+      // Convert the updates to match the database column names
+      const dbUpdates: Partial<
+        Database["public"]["Tables"]["tasks"]["Update"]
+      > = {};
+      if (updates.title !== undefined) dbUpdates.title = updates.title;
+      if (updates.description !== undefined)
+        dbUpdates.description = updates.description;
+      if (updates.columnId !== undefined)
+        dbUpdates.column_id = updates.columnId;
+      if (updates.order !== undefined) dbUpdates.order = updates.order;
+      if (updates.dueDate !== undefined) dbUpdates.due_date = updates.dueDate;
+      if (updates.isCompleted !== undefined) {
+        dbUpdates.is_completed = updates.isCompleted;
+        // If marking as completed, set the completed_at timestamp
+        if (updates.isCompleted) {
+          dbUpdates.completed_at =
+            updates.completedAt || new Date().toISOString();
+        } else {
+          dbUpdates.completed_at = null;
+        }
       }
 
-      const { data, error } = await supabase
+      const { data, error } = (await supabase
         .from("tasks")
-        .update(updates)
+        .update(dbUpdates)
         .eq("id", id)
-        .select()
-        .single();
+        .select()) as SupabaseListResponse<
+        Database["public"]["Tables"]["tasks"]["Row"]
+      >;
 
       if (error) {
         console.error("API: Error updating task:", error);
         throw error;
       }
 
-      console.log(`API: Updated task ${id}`);
-      return data;
+      if (!data || data.length === 0) {
+        throw new Error(
+          `Failed to update task with ID ${id}: No data returned`,
+        );
+      }
+
+      const updatedTask = data[0];
+
+      // Update labels if provided
+      if (updates.labelIds !== undefined) {
+        // First delete existing label associations
+        const { error: deleteLabelError } = (await supabase
+          .from("task_labels")
+          .delete()
+          .eq("task_id", id)) as SupabaseResponse<any>;
+
+        if (deleteLabelError) {
+          console.error(
+            "API: Error deleting task label associations:",
+            deleteLabelError,
+          );
+          // Continue even if deletion fails
+        }
+
+        // Then add new label associations
+        if (updates.labelIds.length > 0) {
+          const labelAssociations = updates.labelIds.map((labelId) => ({
+            task_id: id,
+            label_id: labelId,
+          }));
+
+          const { error: insertLabelError } = (await supabase
+            .from("task_labels")
+            .insert(labelAssociations)) as SupabaseResponse<any>;
+
+          if (insertLabelError) {
+            console.error(
+              "API: Error inserting task label associations:",
+              insertLabelError,
+            );
+            // Continue even if insertion fails
+          }
+        }
+      }
+
+      // Update assignees if provided
+      if (updates.assigneeIds !== undefined) {
+        // First delete existing assignee associations
+        const { error: deleteAssigneeError } = (await supabase
+          .from("task_assignees")
+          .delete()
+          .eq("task_id", id)) as SupabaseResponse<any>;
+
+        if (deleteAssigneeError) {
+          console.error(
+            "API: Error deleting task assignee associations:",
+            deleteAssigneeError,
+          );
+          // Continue even if deletion fails
+        }
+
+        // Then add new assignee associations
+        if (updates.assigneeIds.length > 0) {
+          const assigneeAssociations = updates.assigneeIds.map((userId) => ({
+            task_id: id,
+            user_id: userId,
+          }));
+
+          const { error: insertAssigneeError } = (await supabase
+            .from("task_assignees")
+            .insert(assigneeAssociations)) as SupabaseResponse<any>;
+
+          if (insertAssigneeError) {
+            console.error(
+              "API: Error inserting task assignee associations:",
+              insertAssigneeError,
+            );
+            // Continue even if insertion fails
+          }
+        }
+      }
+
+      // Get the updated task with all its associations
+      return this.getById(id) as Promise<Task>;
     } catch (error) {
       console.error("API: Exception in update task:", error);
       throw error;
@@ -1323,349 +1766,465 @@ export const taskApi = {
 
   async delete(id: string): Promise<void> {
     try {
-      // Delete task labels and assignees first
-      await supabase.from("task_labels").delete().eq("task_id", id);
-      await supabase.from("task_assignees").delete().eq("task_id", id);
+      console.log("API: Deleting task with ID:", id);
 
-      // Then delete the task
-      const { error } = await supabase.from("tasks").delete().eq("id", id);
+      // First get the task to check its column_id and order
+      const { data: task, error: getError } = (await supabase
+        .from("tasks")
+        .select("column_id, order")
+        .eq("id", id)
+        .single()) as SupabaseSingleResponse<{
+        column_id: string;
+        order: number;
+      }>;
 
-      if (error) {
-        console.error("API: Error deleting task:", error);
-        throw error;
+      if (getError) {
+        console.error("API: Error fetching task for deletion:", getError);
+        throw getError;
       }
 
-      console.log(`API: Deleted task ${id}`);
+      // Delete task label associations
+      const { error: labelError } = (await supabase
+        .from("task_labels")
+        .delete()
+        .eq("task_id", id)) as SupabaseResponse<any>;
+
+      if (labelError) {
+        console.error(
+          "API: Error deleting task label associations:",
+          labelError,
+        );
+        // Continue even if deletion fails
+      }
+
+      // Delete task assignee associations
+      const { error: assigneeError } = (await supabase
+        .from("task_assignees")
+        .delete()
+        .eq("task_id", id)) as SupabaseResponse<any>;
+
+      if (assigneeError) {
+        console.error(
+          "API: Error deleting task assignee associations:",
+          assigneeError,
+        );
+        // Continue even if deletion fails
+      }
+
+      // Delete task files
+      const { error: fileError } = (await supabase
+        .from("task_files")
+        .delete()
+        .eq("task_id", id)) as SupabaseResponse<any>;
+
+      if (fileError) {
+        console.error("API: Error deleting task files:", fileError);
+        // Continue even if deletion fails
+      }
+
+      // Delete the task
+      const { error: deleteError } = (await supabase
+        .from("tasks")
+        .delete()
+        .eq("id", id)) as SupabaseResponse<any>;
+
+      if (deleteError) {
+        console.error("API: Error deleting task:", deleteError);
+        throw deleteError;
+      }
+
+      // Update the order of remaining tasks in the same column
+      const { error: updateError } = (await supabase
+        .from("tasks")
+        .update({ order: supabase.sql`order - 1` })
+        .eq("column_id", task.column_id)
+        .gt("order", task.order)) as SupabaseResponse<any>;
+
+      if (updateError) {
+        console.error(
+          "API: Error updating task orders after deletion:",
+          updateError,
+        );
+        // Don't throw here, as the main deletion was successful
+      }
     } catch (error) {
       console.error("API: Exception in delete task:", error);
       throw error;
     }
   },
 
-  async moveToColumn(taskId: string, columnId: string): Promise<Task> {
+  async reorder(
+    columnId: string,
+    taskOrders: { id: string; order: number }[],
+  ): Promise<void> {
     try {
-      // Get the maximum order value for tasks in the destination column
-      const { data: orderData, error: orderError } = await supabase
-        .from("tasks")
-        .select("order")
-        .eq("column_id", columnId)
-        .order("order", { ascending: false })
-        .limit(1);
+      console.log("API: Reordering tasks for column ID:", columnId);
 
-      if (orderError) {
-        console.error("API: Error getting max order:", orderError);
-        throw orderError;
-      }
-
-      const maxOrder =
-        orderData && orderData.length > 0 ? orderData[0].order : 0;
-
-      // Update the task with the new column_id and order without special handling for Completed column
-      const updates: any = {
-        column_id: columnId,
-        order: maxOrder + 1,
-      };
-
-      const { data, error } = await supabase
-        .from("tasks")
-        .update(updates)
-        .eq("id", taskId)
-        .select()
-        .single();
-
-      if (error) {
-        console.error("API: Error moving task to column:", error);
-        throw error;
-      }
-
-      console.log(`API: Moved task ${taskId} to column ${columnId}`);
-      return data;
-    } catch (error) {
-      console.error("API: Exception in moveToColumn:", error);
-      throw error;
-    }
-  },
-
-  async reorder(tasks: { id: string; order: number }[]): Promise<void> {
-    try {
       // Update each task's order in a transaction
-      for (const task of tasks) {
-        const { error } = await supabase
+      for (const { id, order } of taskOrders) {
+        const { error } = (await supabase
           .from("tasks")
-          .update({ order: task.order })
-          .eq("id", task.id);
+          .update({ order })
+          .eq("id", id)
+          .eq("column_id", columnId)) as SupabaseResponse<any>;
 
         if (error) {
-          console.error(`API: Error reordering task ${task.id}:`, error);
+          console.error(`API: Error updating order for task ${id}:`, error);
           throw error;
         }
       }
-
-      console.log(`API: Reordered ${tasks.length} tasks`);
     } catch (error) {
       console.error("API: Exception in reorder tasks:", error);
       throw error;
     }
   },
 
-  async updateTaskLabels(taskId: string, labelIds: string[]): Promise<void> {
+  async moveToColumn(
+    taskId: string,
+    newColumnId: string,
+    newOrder: number,
+  ): Promise<Task> {
     try {
-      // First delete existing task-label associations
-      const { error: deleteError } = await supabase
-        .from("task_labels")
-        .delete()
-        .eq("task_id", taskId);
+      console.log(
+        `API: Moving task ${taskId} to column ${newColumnId} at order ${newOrder}`,
+      );
 
-      if (deleteError) {
-        console.error("API: Error deleting task labels:", deleteError);
-        throw deleteError;
+      // Get the current task details
+      const { data: task, error: getError } = (await supabase
+        .from("tasks")
+        .select("column_id, order")
+        .eq("id", taskId)
+        .single()) as SupabaseSingleResponse<{
+        column_id: string;
+        order: number;
+      }>;
+
+      if (getError) {
+        console.error("API: Error fetching task for moving:", getError);
+        throw getError;
       }
 
-      // Then add new associations if there are any
-      if (labelIds.length > 0) {
-        const taskLabels = labelIds.map((labelId) => ({
-          task_id: taskId,
-          label_id: labelId,
-        }));
+      const oldColumnId = task.column_id;
+      const oldOrder = task.order;
 
-        const { error: insertError } = await supabase
-          .from("task_labels")
-          .insert(taskLabels);
+      // Update the task with the new column and order
+      const { data, error: updateError } = (await supabase
+        .from("tasks")
+        .update({
+          column_id: newColumnId,
+          order: newOrder,
+        })
+        .eq("id", taskId)
+        .select()) as SupabaseListResponse<
+        Database["public"]["Tables"]["tasks"]["Row"]
+      >;
 
-        if (insertError) {
-          console.error("API: Error adding task labels:", insertError);
-          throw insertError;
+      if (updateError) {
+        console.error(
+          "API: Error updating task column and order:",
+          updateError,
+        );
+        throw updateError;
+      }
+
+      if (!data || data.length === 0) {
+        throw new Error(
+          `Failed to move task with ID ${taskId}: No data returned`,
+        );
+      }
+
+      // Update the order of tasks in the old column
+      if (oldColumnId !== newColumnId) {
+        const { error: oldColumnError } = (await supabase
+          .from("tasks")
+          .update({ order: supabase.sql`order - 1` })
+          .eq("column_id", oldColumnId)
+          .gt("order", oldOrder)) as SupabaseResponse<any>;
+
+        if (oldColumnError) {
+          console.error(
+            "API: Error updating task orders in old column:",
+            oldColumnError,
+          );
+          // Don't throw here, as the main update was successful
         }
       }
 
-      console.log(`API: Updated labels for task ${taskId}`);
-    } catch (error) {
-      console.error("API: Exception in updateTaskLabels:", error);
-      throw error;
-    }
-  },
+      // Update the order of tasks in the new column
+      const { error: newColumnError } = (await supabase
+        .from("tasks")
+        .update({ order: supabase.sql`order + 1` })
+        .eq("column_id", newColumnId)
+        .gte("order", newOrder)
+        .neq("id", taskId)) as SupabaseResponse<any>;
 
-  async updateTaskAssignees(taskId: string, userIds: string[]): Promise<void> {
-    try {
-      // First delete existing task-assignee associations
-      const { error: deleteError } = await supabase
-        .from("task_assignees")
-        .delete()
-        .eq("task_id", taskId);
-
-      if (deleteError) {
-        console.error("API: Error deleting task assignees:", deleteError);
-        throw deleteError;
+      if (newColumnError) {
+        console.error(
+          "API: Error updating task orders in new column:",
+          newColumnError,
+        );
+        // Don't throw here, as the main update was successful
       }
 
-      // Then add new associations if there are any
-      if (userIds.length > 0) {
-        const taskAssignees = userIds.map((userId) => ({
-          task_id: taskId,
-          user_id: userId,
-        }));
-
-        const { error: insertError } = await supabase
-          .from("task_assignees")
-          .insert(taskAssignees);
-
-        if (insertError) {
-          console.error("API: Error adding task assignees:", insertError);
-          throw insertError;
-        }
-      }
-
-      console.log(`API: Updated assignees for task ${taskId}`);
+      // Get the updated task with all its associations
+      return this.getById(taskId) as Promise<Task>;
     } catch (error) {
-      console.error("API: Exception in updateTaskAssignees:", error);
+      console.error("API: Exception in moveToColumn task:", error);
       throw error;
     }
   },
 };
 
-// API functions for projects
-export const projectApi = {
-  async getAll(userId?: string): Promise<Project[]> {
+// API functions for task files
+export const taskFileApi = {
+  async getByTaskId(taskId: string): Promise<TaskFile[]> {
     try {
-      console.log(
-        "API: Fetching projects" + (userId ? " for user: " + userId : ""),
-      );
-
-      let query = supabase
-        .from("projects")
+      console.log("API: Fetching files for task ID:", taskId);
+      const { data, error } = (await supabase
+        .from("task_files")
         .select("*")
-        .order("created_at", { ascending: false });
-
-      // If userId is provided, filter projects by user membership
-      if (userId) {
-        // Get projects where the user is a member
-        const { data, error } = await supabase
-          .from("user_projects")
-          .select("project_id")
-          .eq("user_id", userId);
-
-        if (error) {
-          console.error("API: Error fetching user's projects:", error);
-          throw error;
-        }
-
-        if (data && data.length > 0) {
-          const projectIds = data.map((item) => item.project_id);
-          query = query.in("id", projectIds);
-        } else {
-          // If user has no projects, return empty array early
-          return [];
-        }
-      }
-
-      const { data, error } = await query;
+        .eq("task_id", taskId)
+        .order("created_at", { ascending: false })) as SupabaseListResponse<
+        Database["public"]["Tables"]["task_files"]["Row"]
+      >;
 
       if (error) {
-        console.error("API: Error fetching projects:", error);
+        console.error("API: Error fetching task files:", error);
         throw error;
       }
 
-      console.log(`API: Found ${data?.length || 0} projects`);
-
-      // Fetch task counts and member counts for each project
-      const projectsWithCounts = await Promise.all(
-        (data || []).map(async (project) => {
-          // Get task count
-          let taskCount = 0;
-          try {
-            const { count, error: countError } = await supabase
-              .from("tasks")
-              .select("*", { count: "exact", head: true })
-              .eq("project_id", project.id);
-
-            if (!countError && count !== null) {
-              taskCount = count;
-            }
-          } catch (countError) {
-            console.warn(
-              `Error fetching task count for project ${project.id}:`,
-              countError,
-            );
-          }
-
-          // Get member count
-          let memberCount = 0;
-          try {
-            const { count, error: countError } = await supabase
-              .from("user_projects")
-              .select("*", { count: "exact", head: true })
-              .eq("project_id", project.id);
-
-            if (!countError && count !== null) {
-              memberCount = count;
-            }
-          } catch (countError) {
-            console.warn(
-              `Error fetching member count for project ${project.id}:`,
-              countError,
-            );
-          }
-
-          // Format the last updated date
-          const lastUpdated = new Date(project.updated_at).toLocaleDateString(
-            "en-US",
-            {
-              month: "short",
-              day: "numeric",
-              year: "numeric",
-            },
-          );
-
-          return {
-            ...project,
-            taskCount,
-            memberCount,
-            lastUpdated,
-          };
-        }),
-      );
-
-      return projectsWithCounts;
+      return data || [];
     } catch (error) {
-      console.error("API: Exception in getAll projects:", error);
+      console.error("API: Exception in getByTaskId files:", error);
       throw error;
     }
   },
 
-  async getById(id: string): Promise<Project | null> {
+  async getById(id: string): Promise<TaskFile | null> {
     try {
-      console.log(`API: Fetching project with ID: ${id}`);
-      const { data, error } = await supabase
-        .from("projects")
+      console.log("API: Fetching file with ID:", id);
+      const { data, error } = (await supabase
+        .from("task_files")
         .select("*")
         .eq("id", id)
-        .single();
+        .single()) as SupabaseSingleResponse<
+        Database["public"]["Tables"]["task_files"]["Row"]
+      >;
 
       if (error) {
-        console.error("API: Error fetching project:", error);
+        if (error.code === "PGRST116") {
+          console.log(`File with ID ${id} not found`);
+          return null;
+        }
+        console.error("API: Error fetching file:", error);
         throw error;
       }
 
-      console.log("API: Project data:", data);
       return data;
     } catch (error) {
-      console.error("API: Exception in getById project:", error);
+      console.error("API: Exception in getById file:", error);
       throw error;
     }
   },
 
-  async create(project: {
-    title: string;
-    description?: string;
-    organization_id?: string;
-    user_id: string;
-  }): Promise<Project> {
+  async upload(taskId: string, file: File): Promise<TaskFile> {
     try {
-      // Create the project
-      const { data, error } = await supabase
-        .from("projects")
+      console.log(`API: Uploading file ${file.name} for task ${taskId}`);
+
+      // 1. Upload the file to storage
+      const fileName = `${Date.now()}_${file.name}`;
+      const filePath = `${taskId}/${fileName}`;
+
+      const { data: uploadData, error: uploadError } = (await supabase.storage
+        .from("task-files")
+        .upload(filePath, file)) as SupabaseStorageResponse;
+
+      if (uploadError) {
+        console.error("API: Error uploading file to storage:", uploadError);
+        throw uploadError;
+      }
+
+      // 2. Get the public URL for the file
+      const { data: urlData } = supabase.storage
+        .from("task-files")
+        .getPublicUrl(filePath);
+
+      if (!urlData || !urlData.publicUrl) {
+        throw new Error("Failed to get public URL for uploaded file");
+      }
+
+      // 3. Create a record in the task_files table
+      const { data, error } = (await supabase
+        .from("task_files")
         .insert([
           {
-            title: project.title,
-            description: project.description || "",
-            organization_id: project.organization_id,
-            user_id: project.user_id,
-            is_favorite: false,
+            task_id: taskId,
+            file_name: file.name,
+            file_type: file.type,
+            file_size: file.size,
+            file_url: urlData.publicUrl,
           },
         ])
-        .select()
-        .single();
+        .select()) as SupabaseListResponse<
+        Database["public"]["Tables"]["task_files"]["Row"]
+      >;
 
       if (error) {
-        console.error("API: Error creating project:", error);
+        console.error("API: Error creating file record:", error);
         throw error;
       }
 
-      console.log(`API: Created project ${data.id}`);
-
-      // Add the creator as a project member
-      const { error: memberError } = await supabase
-        .from("user_projects")
-        .insert([
-          {
-            user_id: project.user_id,
-            project_id: data.id,
-          },
-        ]);
-
-      if (memberError) {
-        console.error("API: Error adding creator to project:", memberError);
-        throw memberError;
+      if (!data || data.length === 0) {
+        throw new Error("Failed to create file record: No data returned");
       }
 
-      // Default columns are now created by the database trigger
-      console.log(
-        `API: Default columns will be created by database trigger for project ${data.id}`,
+      return data[0];
+    } catch (error) {
+      console.error("API: Exception in upload file:", error);
+      throw error;
+    }
+  },
+
+  async delete(id: string): Promise<void> {
+    try {
+      console.log("API: Deleting file with ID:", id);
+
+      // 1. Get the file record to get the file path
+      const { data: file, error: getError } = (await supabase
+        .from("task_files")
+        .select("file_url, task_id")
+        .eq("id", id)
+        .single()) as SupabaseSingleResponse<{
+        file_url: string;
+        task_id: string;
+      }>;
+
+      if (getError) {
+        console.error("API: Error fetching file for deletion:", getError);
+        throw getError;
+      }
+
+      // 2. Delete the file from storage
+      // Extract the path from the URL
+      const url = new URL(file.file_url);
+      const pathMatch = url.pathname.match(
+        /\/storage\/v1\/object\/public\/task-files\/(.+)/,
       );
 
-      return data;
+      if (pathMatch && pathMatch[1]) {
+        const storagePath = decodeURIComponent(pathMatch[1]);
+
+        const { error: storageError } = (await supabase.storage
+          .from("task-files")
+          .remove([storagePath])) as SupabaseStorageResponse;
+
+        if (storageError) {
+          console.error("API: Error deleting file from storage:", storageError);
+          // Continue even if storage deletion fails
+        }
+      }
+
+      // 3. Delete the file record
+      const { error: deleteError } = (await supabase
+        .from("task_files")
+        .delete()
+        .eq("id", id)) as SupabaseResponse<any>;
+
+      if (deleteError) {
+        console.error("API: Error deleting file record:", deleteError);
+        throw deleteError;
+      }
     } catch (error) {
-      console.error("API: Exception in create project:", error);
+      console.error("API: Exception in delete file:", error);
+      throw error;
+    }
+  },
+};
+
+// API functions for labels
+export const labelApi = {
+  async getAll(): Promise<Label[]> {
+    try {
+      console.log("API: Fetching all labels");
+      const { data, error } = (await supabase
+        .from("labels")
+        .select("*")
+        .order("name")) as SupabaseListResponse<
+        Database["public"]["Tables"]["labels"]["Row"]
+      >;
+
+      if (error) {
+        // Check if it's a missing table error
+        if (
+          error.code === "42P01" &&
+          error.message.includes('relation "public.labels" does not exist')
+        ) {
+          console.warn(
+            "Labels table doesn't exist yet. This is expected if you haven't run the migration.",
+          );
+          return [];
+        }
+
+        console.error("API: Error fetching all labels:", error);
+        throw error;
+      }
+
+      return data || [];
+    } catch (error) {
+      console.error("API: Exception in getAll labels:", error);
+
+      // Check if it's a missing table error
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        error.code === "42P01" &&
+        "message" in error &&
+        typeof error.message === "string" &&
+        error.message.includes('relation "public.labels" does not exist')
+      ) {
+        console.warn(
+          "Labels table doesn't exist yet. This is expected if you haven't run the migration.",
+        );
+        return [];
+      }
+
+      throw error;
+    }
+  },
+
+  async create(labelData: {
+    name: string;
+    color: string;
+    organizationId?: string;
+  }): Promise<Label> {
+    try {
+      console.log("API: Creating new label");
+      const { data, error } = (await supabase
+        .from("labels")
+        .insert([
+          {
+            name: labelData.name,
+            color: labelData.color,
+            organization_id: labelData.organizationId || null,
+          },
+        ])
+        .select()) as SupabaseListResponse<
+        Database["public"]["Tables"]["labels"]["Row"]
+      >;
+
+      if (error) {
+        console.error("API: Error creating label:", error);
+        throw error;
+      }
+
+      if (!data || data.length === 0) {
+        throw new Error("Failed to create label: No data returned");
+      }
+
+      return data[0];
+    } catch (error) {
+      console.error("API: Exception in create label:", error);
       throw error;
     }
   },
@@ -1673,297 +2232,68 @@ export const projectApi = {
   async update(
     id: string,
     updates: {
-      title?: string;
-      description?: string;
-      is_favorite?: boolean;
-      organization_id?: string;
+      name?: string;
+      color?: string;
     },
-  ): Promise<Project> {
+  ): Promise<Label> {
     try {
-      const { data, error } = await supabase
-        .from("projects")
+      console.log("API: Updating label with ID:", id);
+      const { data, error } = (await supabase
+        .from("labels")
         .update(updates)
         .eq("id", id)
-        .select()
-        .single();
+        .select()) as SupabaseListResponse<
+        Database["public"]["Tables"]["labels"]["Row"]
+      >;
 
       if (error) {
-        console.error("API: Error updating project:", error);
+        console.error("API: Error updating label:", error);
         throw error;
       }
 
-      console.log(`API: Updated project ${id}`);
-      return data;
+      if (!data || data.length === 0) {
+        throw new Error(
+          `Failed to update label with ID ${id}: No data returned`,
+        );
+      }
+
+      return data[0];
     } catch (error) {
-      console.error("API: Exception in update project:", error);
+      console.error("API: Exception in update label:", error);
       throw error;
     }
   },
 
   async delete(id: string): Promise<void> {
     try {
-      console.log(`API: Starting deletion of project ${id}`);
+      console.log("API: Deleting label with ID:", id);
 
-      // Delete project members first
-      const { error: membersError } = await supabase
-        .from("user_projects")
+      // First delete task label associations
+      const { error: taskLabelError } = (await supabase
+        .from("task_labels")
         .delete()
-        .eq("project_id", id);
+        .eq("label_id", id)) as SupabaseResponse<any>;
 
-      if (membersError) {
-        console.error("API: Error deleting project members:", membersError);
-        throw membersError;
-      }
-      console.log(
-        `API: Successfully deleted project members for project ${id}`,
-      );
-
-      // Delete tasks and columns (cascade delete should handle this, but just to be safe)
-      const { data: columns, error: columnsError } = await supabase
-        .from("columns")
-        .select("id")
-        .eq("project_id", id);
-
-      if (columnsError) {
-        console.error("API: Error fetching project columns:", columnsError);
-        throw columnsError;
-      }
-      console.log(
-        `API: Found ${columns?.length || 0} columns for project ${id}`,
-      );
-
-      // Delete tasks for each column
-      if (columns && columns.length > 0) {
-        for (const column of columns) {
-          // Delete task labels and assignees first
-          const { data: tasks, error: tasksError } = await supabase
-            .from("tasks")
-            .select("id")
-            .eq("column_id", column.id);
-
-          if (tasksError) {
-            console.error(
-              `API: Error fetching tasks for column ${column.id}:`,
-              tasksError,
-            );
-            throw tasksError;
-          }
-
-          if (tasks && tasks.length > 0) {
-            console.log(
-              `API: Found ${tasks.length} tasks for column ${column.id}`,
-            );
-            for (const task of tasks) {
-              // Delete task labels
-              const { error: labelsError } = await supabase
-                .from("task_labels")
-                .delete()
-                .eq("task_id", task.id);
-
-              if (labelsError) {
-                console.error(
-                  `API: Error deleting labels for task ${task.id}:`,
-                  labelsError,
-                );
-                throw labelsError;
-              }
-
-              // Delete task assignees
-              const { error: assigneesError } = await supabase
-                .from("task_assignees")
-                .delete()
-                .eq("task_id", task.id);
-
-              if (assigneesError) {
-                console.error(
-                  `API: Error deleting assignees for task ${task.id}:`,
-                  assigneesError,
-                );
-                throw assigneesError;
-              }
-
-              console.log(
-                `API: Successfully deleted labels and assignees for task ${task.id}`,
-              );
-            }
-
-            // Delete tasks for this column
-            const { error: deleteTasksError } = await supabase
-              .from("tasks")
-              .delete()
-              .eq("column_id", column.id);
-
-            if (deleteTasksError) {
-              console.error(
-                `API: Error deleting tasks for column ${column.id}:`,
-                deleteTasksError,
-              );
-              throw deleteTasksError;
-            }
-            console.log(
-              `API: Successfully deleted tasks for column ${column.id}`,
-            );
-          }
-        }
-
-        // Delete columns
-        const { error: deleteColumnsError } = await supabase
-          .from("columns")
-          .delete()
-          .eq("project_id", id);
-
-        if (deleteColumnsError) {
-          console.error(
-            `API: Error deleting columns for project ${id}:`,
-            deleteColumnsError,
-          );
-          throw deleteColumnsError;
-        }
-        console.log(`API: Successfully deleted columns for project ${id}`);
-      }
-
-      // Finally delete the project
-      const { error } = await supabase.from("projects").delete().eq("id", id);
-
-      if (error) {
-        console.error("API: Error deleting project:", error);
-        throw error;
-      }
-
-      console.log(`API: Successfully deleted project ${id}`);
-    } catch (error) {
-      console.error("API: Exception in delete project:", error);
-      throw error;
-    }
-  },
-
-  async toggleFavorite(id: string): Promise<Project> {
-    try {
-      // Get current favorite status
-      const { data: project, error: getError } = await supabase
-        .from("projects")
-        .select("is_favorite")
-        .eq("id", id)
-        .single();
-
-      if (getError) {
-        console.error("API: Error getting project favorite status:", getError);
-        throw getError;
-      }
-
-      // Toggle the favorite status
-      const { data, error } = await supabase
-        .from("projects")
-        .update({ is_favorite: !project.is_favorite })
-        .eq("id", id)
-        .select()
-        .single();
-
-      if (error) {
-        console.error("API: Error toggling project favorite:", error);
-        throw error;
-      }
-
-      console.log(
-        `API: Toggled favorite for project ${id} to ${!project.is_favorite}`,
-      );
-      return data;
-    } catch (error) {
-      console.error("API: Exception in toggleFavorite:", error);
-      throw error;
-    }
-  },
-
-  async addMember(projectId: string, userId: string): Promise<void> {
-    try {
-      // Check if the user is already a member
-      const { data: existing, error: checkError } = await supabase
-        .from("user_projects")
-        .select("*")
-        .eq("project_id", projectId)
-        .eq("user_id", userId);
-
-      if (checkError) {
-        console.error("API: Error checking project membership:", checkError);
-        throw checkError;
-      }
-
-      // If the user is already a member, do nothing
-      if (existing && existing.length > 0) {
-        console.log(
-          `API: User ${userId} is already a member of project ${projectId}`,
+      if (taskLabelError) {
+        console.error(
+          "API: Error deleting task label associations:",
+          taskLabelError,
         );
-        return;
+        // Continue even if deletion fails
       }
 
-      // Add the user as a project member
-      const { error } = await supabase.from("user_projects").insert([
-        {
-          user_id: userId,
-          project_id: projectId,
-        },
-      ]);
-
-      if (error) {
-        console.error("API: Error adding member to project:", error);
-        throw error;
-      }
-
-      console.log(`API: Added user ${userId} to project ${projectId}`);
-    } catch (error) {
-      console.error("API: Exception in addMember:", error);
-      throw error;
-    }
-  },
-
-  async removeMember(projectId: string, userId: string): Promise<void> {
-    try {
-      const { error } = await supabase
-        .from("user_projects")
+      // Then delete the label
+      const { error } = (await supabase
+        .from("labels")
         .delete()
-        .eq("project_id", projectId)
-        .eq("user_id", userId);
+        .eq("id", id)) as SupabaseResponse<any>;
 
       if (error) {
-        console.error("API: Error removing member from project:", error);
+        console.error("API: Error deleting label:", error);
         throw error;
       }
-
-      console.log(`API: Removed user ${userId} from project ${projectId}`);
     } catch (error) {
-      console.error("API: Exception in removeMember:", error);
-      throw error;
-    }
-  },
-
-  async getMembers(projectId: string): Promise<User[]> {
-    try {
-      console.log(`API: Fetching members for project ${projectId}`);
-      const { data, error } = await supabase
-        .from("user_projects")
-        .select("user_id, profiles(*)")
-        .eq("project_id", projectId);
-
-      if (error) {
-        console.error("API: Error fetching project members:", error);
-        throw error;
-      }
-
-      console.log(
-        `API: Found ${data?.length || 0} members for project ${projectId}`,
-      );
-      return (data || []).map((item) => ({
-        id: item.profiles.id,
-        name: item.profiles.name || "",
-        email: item.profiles.email || "",
-        role: (item.profiles.role as UserRole) || "user",
-        jobTitle: item.profiles.job_title,
-        avatar:
-          item.profiles.avatar ||
-          `https://api.dicebear.com/7.x/avataaars/svg?seed=${item.profiles.email}`,
-      }));
-    } catch (error) {
-      console.error("API: Exception in getMembers:", error);
+      console.error("API: Exception in delete label:", error);
       throw error;
     }
   },

@@ -10,11 +10,33 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { CheckCircle, XCircle, AlertCircle, Loader2 } from "lucide-react";
+import type { Database } from "@/types/supabase";
 
 type CheckResult = {
   status: "success" | "error" | "loading" | "warning";
   message: string;
   details?: string;
+};
+
+type StorageBucket = Database["storage"]["Tables"]["buckets"]["Row"];
+type StorageBucketsResponse = {
+  data: StorageBucket[] | null;
+  error: Error | null;
+};
+
+type CountResponse = {
+  count: number | null;
+  error: Error | null;
+};
+
+type SessionResponse = {
+  data: { session: any } | null;
+  error: Error | null;
+};
+
+type QueryResponse<T> = {
+  data: T[] | null;
+  error: Error | null;
 };
 
 const SupabaseConfigCheck = () => {
@@ -41,7 +63,8 @@ const SupabaseConfigCheck = () => {
     // 1. Check Storage
     try {
       console.log("Checking Supabase storage...");
-      const { data: buckets, error } = await supabase.storage.listBuckets();
+      const { data: buckets, error } =
+        (await supabase.storage.listBuckets()) as StorageBucketsResponse;
 
       if (error) {
         console.error("Storage check failed:", error);
@@ -74,9 +97,9 @@ const SupabaseConfigCheck = () => {
 
           // Also check if task_files table exists
           try {
-            const { count, error: countError } = await supabase
+            const { count, error: countError } = (await supabase
               .from("task_files")
-              .select("*", { count: "exact", head: true });
+              .select("*", { count: "exact", head: true })) as CountResponse;
 
             if (
               countError &&
@@ -334,7 +357,7 @@ const SupabaseConfigCheck = () => {
     try {
       console.log("Checking Supabase authentication...");
       const { data: session, error: sessionError } =
-        await supabase.auth.getSession();
+        (await supabase.auth.getSession()) as SessionResponse;
 
       if (sessionError) {
         console.error("Auth check failed:", sessionError);
@@ -373,7 +396,10 @@ const SupabaseConfigCheck = () => {
 
       try {
         // First try with profiles table
-        const result = await supabase.from("profiles").select().limit(1);
+        const result = (await supabase
+          .from("profiles")
+          .select()
+          .limit(1)) as QueryResponse<any>;
         data = result.data;
         error = result.error;
 
@@ -386,10 +412,10 @@ const SupabaseConfigCheck = () => {
           console.log(
             "Profiles query failed with permission error, trying projects table",
           );
-          const projectResult = await supabase
+          const projectResult = (await supabase
             .from("projects")
             .select()
-            .limit(1);
+            .limit(1)) as QueryResponse<any>;
           data = projectResult.data;
           error = projectResult.error;
 
@@ -402,7 +428,10 @@ const SupabaseConfigCheck = () => {
             console.log(
               "Projects query failed with permission error, trying users table",
             );
-            const usersResult = await supabase.from("users").select().limit(1);
+            const usersResult = (await supabase
+              .from("users")
+              .select()
+              .limit(1)) as QueryResponse<any>;
             data = usersResult.data;
             error = usersResult.error;
           }

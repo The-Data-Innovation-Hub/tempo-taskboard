@@ -13,13 +13,24 @@ import { useToast } from "@/components/ui/use-toast";
 import { useAuth, User } from "@/lib/auth";
 import { userApi, Project } from "@/lib/api";
 import NeumorphicContainer from "@/components/common/NeumorphicContainer";
+import { Database } from "@/types/supabase";
+
+type ExtendedUser = User & {
+  organization?: {
+    id: string;
+    name: string;
+    description?: string;
+    logo?: string;
+  };
+  projects?: Project[];
+};
 
 const UserDetails = () => {
   const { id } = useParams<{ id: string }>();
   const { toast } = useToast();
   const { user: currentUser } = useAuth();
   const navigate = useNavigate();
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<ExtendedUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   // Check if current user is admin
@@ -42,7 +53,7 @@ const UserDetails = () => {
       try {
         setIsLoading(true);
         const userData = await userApi.getById(id);
-        setUser(userData);
+        setUser(userData as ExtendedUser);
       } catch (error) {
         console.error("Error fetching user details:", error);
         toast({

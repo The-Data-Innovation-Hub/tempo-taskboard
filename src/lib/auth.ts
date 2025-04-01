@@ -1,6 +1,36 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { supabase } from "./supabase";
+import type { Database } from "@/types/supabase";
+
+type AuthResponse = {
+  data: {
+    user: any;
+    session: any;
+  };
+  error: Error | null;
+};
+
+type SignOutResponse = {
+  error: Error | null;
+};
+
+type SessionResponse = {
+  data: {
+    session: any;
+  };
+  error: Error | null;
+};
+
+type ProfileResponse = {
+  data: Database["public"]["Tables"]["profiles"]["Row"] | null;
+  error: Error | null;
+};
+
+type UserResponse = {
+  data: any;
+  error: Error | null;
+};
 
 export type UserRole = "admin" | "user";
 
@@ -41,10 +71,10 @@ export const useAuth = create<AuthState>(
         try {
           // Supabase login attempt
           console.log("Attempting Supabase login for", email);
-          const { data, error } = await supabase.auth.signInWithPassword({
+          const { data, error } = (await supabase.auth.signInWithPassword({
             email,
             password,
-          });
+          })) as AuthResponse;
 
           if (error) {
             console.error("Supabase login error:", error);
@@ -59,11 +89,11 @@ export const useAuth = create<AuthState>(
           // Try to fetch profile data, but handle errors gracefully
           let profileData = null;
           try {
-            const { data: profile, error } = await supabase
+            const { data: profile, error } = (await supabase
               .from("profiles")
               .select("*")
               .eq("id", data.user.id)
-              .single();
+              .single()) as ProfileResponse;
 
             if (!error) {
               profileData = profile;
@@ -112,7 +142,7 @@ export const useAuth = create<AuthState>(
       ) => {
         try {
           // Use regular signUp instead of admin API
-          const { data, error } = await supabase.auth.signUp({
+          const { data, error } = (await supabase.auth.signUp({
             email,
             password,
             options: {
@@ -121,7 +151,7 @@ export const useAuth = create<AuthState>(
                 role,
               },
             },
-          });
+          })) as AuthResponse;
 
           if (error) {
             throw new Error(error.message);
@@ -133,9 +163,9 @@ export const useAuth = create<AuthState>(
 
           // IMPORTANT: Create the user record in public.users FIRST
           // This is critical for RLS policies to work correctly
-          const { error: userError } = await supabase
+          const { error: userError } = (await supabase
             .from("users")
-            .insert([{ id: data.user.id }]);
+            .insert([{ id: data.user.id }])) as UserResponse;
 
           if (userError) {
             console.error("Error creating user record:", userError);
@@ -145,7 +175,7 @@ export const useAuth = create<AuthState>(
           }
 
           // Now create the profile record AFTER the user record exists
-          const { error: profileError } = await supabase
+          const { error: profileError } = (await supabase
             .from("profiles")
             .insert([
               {
@@ -155,7 +185,7 @@ export const useAuth = create<AuthState>(
                 role,
                 avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${email}`,
               },
-            ]);
+            ])) as UserResponse;
 
           if (profileError) {
             console.error("Error creating profile:", profileError);
@@ -188,7 +218,7 @@ export const useAuth = create<AuthState>(
       logout: async () => {
         try {
           // Real Supabase logout
-          const { error } = await supabase.auth.signOut();
+          const { error } = (await supabase.auth.signOut()) as SignOutResponse;
           if (error) {
             console.error("Error signing out:", error);
           }
@@ -206,10 +236,10 @@ export const useAuth = create<AuthState>(
           console.log("Updating user profile with data:", userData);
 
           // Update profile in the database
-          const { error } = await supabase
+          const { error } = (await supabase
             .from("profiles")
             .update(userData)
-            .eq("id", currentUser.id);
+            .eq("id", currentUser.id)) as UserResponse;
 
           if (error) {
             console.error("Supabase update error:", error);
@@ -229,18 +259,19 @@ export const useAuth = create<AuthState>(
       },
       refreshSession: async () => {
         try {
-          const { data } = await supabase.auth.getSession();
+          const { data } =
+            (await supabase.auth.getSession()) as SessionResponse;
 
           if (data.session) {
             // Fetch user profile
             // Try to fetch profile data, but handle errors gracefully
             let profileData = null;
             try {
-              const { data: profile, error } = await supabase
+              const { data: profile, error } = (await supabase
                 .from("profiles")
                 .select("*")
                 .eq("id", data.session.user.id)
-                .single();
+                .single()) as ProfileResponse;
 
               if (!error) {
                 profileData = profile;

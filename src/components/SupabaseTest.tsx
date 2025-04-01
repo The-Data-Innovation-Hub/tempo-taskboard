@@ -3,6 +3,28 @@ import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import { sendProjectInvitation } from "@/lib/email";
+import type { Database } from "@/types/supabase";
+
+type RpcResponse<T> = {
+  data: T | null;
+  error: Error | null;
+};
+
+type QueryResponse<T> = {
+  data: T[] | null;
+  error: Error | null;
+};
+
+type RlsCheckResponse = {
+  data: { has_rls: boolean } | null;
+  error: Error | null;
+};
+
+type TestData = {
+  test_id: string;
+  message: string;
+  created_at: string;
+};
 
 const SupabaseTest = () => {
   const { toast } = useToast();
@@ -45,9 +67,9 @@ const SupabaseTest = () => {
       };
 
       // First, try to create the test table if it doesn't exist
-      const { error: createTableError } = await supabase.rpc(
+      const { error: createTableError } = (await supabase.rpc(
         "create_test_table_if_not_exists",
-      );
+      )) as RpcResponse<any>;
 
       if (createTableError) {
         // If the RPC function doesn't exist, we'll try to insert anyway
@@ -55,10 +77,10 @@ const SupabaseTest = () => {
       }
 
       // Insert test data
-      const { data: insertData, error: insertError } = await supabase
+      const { data: insertData, error: insertError } = (await supabase
         .from(testTable)
         .insert([testData])
-        .select();
+        .select()) as QueryResponse<TestData>;
 
       console.log("Insert result:", { insertData, insertError });
 
@@ -67,10 +89,10 @@ const SupabaseTest = () => {
       }
 
       // Fetch the data we just inserted to verify it's there
-      const { data: fetchData, error: fetchError } = await supabase
+      const { data: fetchData, error: fetchError } = (await supabase
         .from(testTable)
         .select("*")
-        .eq("test_id", testData.test_id);
+        .eq("test_id", testData.test_id)) as QueryResponse<TestData>;
 
       console.log("Fetch result:", { fetchData, fetchError });
 
@@ -92,10 +114,10 @@ const SupabaseTest = () => {
         // Try one more time with a longer delay to account for potential replication lag
         setTimeout(async () => {
           try {
-            const { data: retryData, error: retryError } = await supabase
+            const { data: retryData, error: retryError } = (await supabase
               .from(testTable)
               .select("*")
-              .eq("test_id", testData.test_id);
+              .eq("test_id", testData.test_id)) as QueryResponse<TestData>;
 
             console.log("Retry fetch result:", { retryData, retryError });
 
@@ -113,25 +135,31 @@ const SupabaseTest = () => {
               let rlsData = null;
               let rlsError = null;
               try {
-                const { data, error } = await supabase.rpc("check_table_rls", {
+                const { data, error } = (await supabase.rpc("check_table_rls", {
                   table_name: testTable,
-                });
+                })) as RlsCheckResponse;
                 rlsData = data;
                 rlsError = error;
                 console.log("RLS check result:", { data, error });
 
                 // Additional debug info
-                const { data: tableInfo, error: tableError } = await supabase
+                const { data: tableInfo, error: tableError } = (await supabase
                   .from("pg_tables")
                   .select("*")
-                  .eq("tablename", testTable);
+                  .eq("tablename", testTable)) as {
+                  data: any[] | null;
+                  error: Error | null;
+                };
                 console.log("Table info:", { tableInfo, tableError });
 
                 // Check policies directly
-                const { data: policies, error: policiesError } = await supabase
+                const { data: policies, error: policiesError } = (await supabase
                   .from("pg_policies")
                   .select("*")
-                  .eq("tablename", testTable);
+                  .eq("tablename", testTable)) as {
+                  data: any[] | null;
+                  error: Error | null;
+                };
                 console.log("Policies:", { policies, policiesError });
               } catch (error) {
                 console.error("Error checking RLS status:", error);
