@@ -40,6 +40,10 @@ export interface User {
   name: string;
   role: UserRole;
   avatar?: string;
+  jobTitle?: string;
+  organizationId?: string;
+  organization?: any;
+  projects?: any[];
 }
 
 interface AuthState {
@@ -123,6 +127,8 @@ export const useAuth = create<AuthState>(
             avatar:
               profileData?.avatar ||
               `https://api.dicebear.com/7.x/avataaars/svg?seed=${data.user.email}`,
+            jobTitle: profileData?.job_title || undefined,
+            organizationId: profileData?.organization_id || undefined,
           };
 
           console.log("Final user object:", user);
@@ -200,6 +206,8 @@ export const useAuth = create<AuthState>(
             name,
             role,
             avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${email}`,
+            jobTitle: undefined,
+            organizationId: undefined,
           };
 
           // Email functionality has been removed
@@ -307,6 +315,8 @@ export const useAuth = create<AuthState>(
               avatar:
                 profileData?.avatar ||
                 `https://api.dicebear.com/7.x/avataaars/svg?seed=${data.session.user.email}`,
+              jobTitle: profileData?.job_title || undefined,
+              organizationId: profileData?.organization_id || undefined,
             };
 
             console.log("Final user object after refresh:", user);

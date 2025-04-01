@@ -8,6 +8,7 @@ import AuthGuard from "./components/layout/AuthGuard";
 import { useAuth } from "./lib/auth";
 import { ToastProvider } from "./components/ui/toast";
 import { Toaster } from "./components/ui/toaster";
+import { useToast } from "./components/ui/use-toast";
 import routes from "tempo-routes";
 import { store } from "./lib/redux-store";
 import { DragDropContext } from "react-beautiful-dnd";
@@ -28,24 +29,118 @@ const HelpPage = lazy(() => import("./pages/help"));
 // Error boundary component for production use
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode },
-  { hasError: boolean }
+  {
+    hasError: boolean;
+    errorMessage: string;
+    errorStack: string;
+    componentStack: string;
+  }
 > {
   constructor(props: { children: React.ReactNode }) {
     super(props);
-    this.state = { hasError: false };
+    this.state = {
+      hasError: false,
+      errorMessage: "",
+      errorStack: "",
+      componentStack: "",
+    };
   }
 
-  static getDerivedStateFromError() {
-    return { hasError: true };
+  static getDerivedStateFromError(error: Error) {
+    return {
+      hasError: true,
+      errorMessage: error.message || "An unknown error occurred",
+    };
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error("Uncaught error:", error, errorInfo);
-    // In production, you might want to log this to an error tracking service
+    // Capture detailed error information
+    this.setState({
+      errorStack: error.stack || "",
+      componentStack: errorInfo.componentStack || "",
+    });
+
+    // Log error in development
+    if (import.meta.env.DEV) {
+      console.error("Uncaught error:", error);
+      console.error("Component stack:", errorInfo.componentStack);
+    }
+
+    // In production, log minimal information to console but send detailed info to an error tracking service
+    if (import.meta.env.PROD) {
+      console.error(`Production error: ${error.message}`);
+
+      // Send to error tracking service if available
+      this.logErrorToService(error, errorInfo);
+
+      // You could also send to your own API endpoint
+      // this.logErrorToAPI(error, errorInfo);
+    }
+  }
+
+  logErrorToService(error: Error, errorInfo: React.ErrorInfo) {
+    // Integration with error tracking services like Sentry would go here
+    // Example (commented out as it's not actually implemented):
+    // if (typeof window.Sentry !== 'undefined') {
+    //   window.Sentry.captureException(error, { extra: { componentStack: errorInfo.componentStack } });
+    // }
+
+    // For now, we'll just log to console in a structured way
+    if (import.meta.env.PROD) {
+      const errorData = {
+        message: error.message,
+        stack: error.stack,
+        componentStack: errorInfo.componentStack,
+        timestamp: new Date().toISOString(),
+        url: window.location.href,
+        userAgent: navigator.userAgent,
+      };
+
+      console.error("PRODUCTION ERROR REPORT:", JSON.stringify(errorData));
+    }
   }
 
   render() {
     if (this.state.hasError) {
+      // Show a more detailed error in development
+      if (import.meta.env.DEV) {
+        return (
+          <div className="flex items-center justify-center h-screen bg-gray-100">
+            <div className="p-8 bg-white rounded-lg shadow-lg max-w-2xl w-full overflow-auto">
+              <h2 className="text-2xl font-bold text-red-600 mb-4">
+                Something went wrong
+              </h2>
+              <p className="text-gray-700 mb-4">{this.state.errorMessage}</p>
+              {this.state.errorStack && (
+                <div className="mb-4">
+                  <h3 className="text-lg font-semibold mb-2">Error Stack:</h3>
+                  <pre className="bg-gray-100 p-3 rounded text-sm overflow-auto max-h-40">
+                    {this.state.errorStack}
+                  </pre>
+                </div>
+              )}
+              {this.state.componentStack && (
+                <div className="mb-4">
+                  <h3 className="text-lg font-semibold mb-2">
+                    Component Stack:
+                  </h3>
+                  <pre className="bg-gray-100 p-3 rounded text-sm overflow-auto max-h-40">
+                    {this.state.componentStack}
+                  </pre>
+                </div>
+              )}
+              <button
+                onClick={() => window.location.reload()}
+                className="w-full py-2 px-4 bg-[#0089AD] text-white rounded hover:bg-[#006d8a] transition-colors"
+              >
+                Refresh Page
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      // Show a user-friendly error in production
       return (
         <div className="flex items-center justify-center h-screen bg-gray-100">
           <div className="p-8 bg-white rounded-lg shadow-lg max-w-md w-full">
@@ -53,15 +148,23 @@ class ErrorBoundary extends React.Component<
               Something went wrong
             </h2>
             <p className="text-gray-700 mb-6">
-              We're sorry, but an error occurred. Please try refreshing the
-              page.
+              We're sorry, but an error occurred. Our team has been notified and
+              is working on a fix.
             </p>
-            <button
-              onClick={() => window.location.reload()}
-              className="w-full py-2 px-4 bg-[#0089AD] text-white rounded hover:bg-[#006d8a] transition-colors"
-            >
-              Refresh Page
-            </button>
+            <div className="flex flex-col space-y-3">
+              <button
+                onClick={() => window.location.reload()}
+                className="w-full py-2 px-4 bg-[#0089AD] text-white rounded hover:bg-[#006d8a] transition-colors"
+              >
+                Refresh Page
+              </button>
+              <button
+                onClick={() => (window.location.href = "/")}
+                className="w-full py-2 px-4 border border-[#0089AD] text-[#0089AD] rounded hover:bg-gray-50 transition-colors"
+              >
+                Go to Home Page
+              </button>
+            </div>
           </div>
         </div>
       );
@@ -73,6 +176,35 @@ class ErrorBoundary extends React.Component<
 
 function App() {
   const { isAuthenticated, refreshSession } = useAuth();
+  const { toast } = useToast();
+
+  // Global error handler for unhandled promise rejections
+  useEffect(() => {
+    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      console.error("Unhandled Promise Rejection:", event.reason);
+
+      // In production, show a toast notification
+      if (import.meta.env.PROD) {
+        toast({
+          title: "An error occurred",
+          description: "Something went wrong. Please try again later.",
+          variant: "destructive",
+        });
+      }
+
+      // Prevent the default browser behavior which would log to console
+      event.preventDefault();
+    };
+
+    window.addEventListener("unhandledrejection", handleUnhandledRejection);
+
+    return () => {
+      window.removeEventListener(
+        "unhandledrejection",
+        handleUnhandledRejection,
+      );
+    };
+  }, [toast]);
 
   // Check for existing session on app load
   useEffect(() => {
@@ -81,9 +213,13 @@ function App() {
         await refreshSession();
       } catch (error) {
         console.error("Failed to refresh authentication session:", error);
-        // In production, we might want to show a toast notification
+        // Show a toast notification in production
         if (import.meta.env.PROD) {
-          // Could add a toast notification here if needed
+          toast({
+            title: "Authentication Error",
+            description: "Failed to restore your session. Please log in again.",
+            variant: "destructive",
+          });
         }
       }
     };
@@ -92,7 +228,7 @@ function App() {
 
     // Skip auth listener to avoid errors
     return () => {};
-  }, [refreshSession]);
+  }, [refreshSession, toast]);
 
   // Dummy onDragEnd function for the global DragDropContext
   const onDragEnd = () => {

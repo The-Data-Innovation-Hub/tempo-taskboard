@@ -1,14 +1,14 @@
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "../types/supabase";
 
-// Define hardcoded values for Supabase connection
-const HARDCODED_URL = "https://gwyfopiauplascaofhii.supabase.co";
-const HARDCODED_KEY =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd3eWZvcGlhdXBsYXNjYW9maGlpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDI4MjQ1NTksImV4cCI6MjA1ODQwMDU1OX0.bHQnCfb5GM3IUh_Y6U-LF2LzL0FBrgRPSqbcVVPbtec";
+// Use environment variables for Supabase connection
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-// Use environment variables with fallback to hardcoded values
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || HARDCODED_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || HARDCODED_KEY;
+// Validate environment variables
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.error("Missing required Supabase environment variables");
+}
 
 // Only log environment variables in development mode
 if (import.meta.env.DEV) {
@@ -22,13 +22,7 @@ if (import.meta.env.DEV) {
 
   // Log connection status for debugging
   console.log("Supabase connection status:", {
-    usingRealUrl:
-      supabaseUrl === HARDCODED_URL ? "Using hardcoded URL" : "Using env URL",
-    usingRealKey:
-      supabaseAnonKey === HARDCODED_KEY
-        ? "Using hardcoded key"
-        : "Using env key",
-    url: supabaseUrl,
+    url: supabaseUrl ? "Using env URL" : "No URL set",
     keyLength: supabaseAnonKey?.length || 0,
   });
 }
@@ -198,19 +192,59 @@ const createRealClient = () => {
       keyLength: supabaseAnonKey?.length || 0,
     });
   }
-  return createClient<Database>(supabaseUrl, supabaseAnonKey, {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: true,
-    },
-    global: {
-      headers: { "x-application-name": "project-management-app" },
-    },
-  });
+
+  try {
+    if (!supabaseUrl || !supabaseAnonKey) {
+      throw new Error("Missing Supabase credentials");
+    }
+
+    const client = createClient<Database>(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+      },
+      global: {
+        headers: { "x-application-name": "project-management-app" },
+      },
+    });
+
+    // Add a health check to verify the connection works
+    if (import.meta.env.PROD) {
+      client
+        .from("test")
+        .select("count(*)", { count: "exact", head: true })
+        .then(({ error }) => {
+          if (error) {
+            console.error("Supabase connection test failed:", error);
+            // We don't throw here to allow the app to continue with degraded functionality
+          }
+        })
+        .catch((err) => {
+          console.error("Supabase connection test exception:", err);
+        });
+    }
+
+    return client;
+  } catch (error) {
+    console.error("Failed to initialize Supabase client:", error);
+
+    // Return a mock client that will show errors for all operations in production
+    if (import.meta.env.PROD) {
+      return createMockClient();
+    }
+
+    // In development, rethrow to make the error more visible
+    if (import.meta.env.DEV) {
+      throw error;
+    }
+
+    // Fallback to mock client
+    return createMockClient();
+  }
 };
 
-// Use the real client if environment variables are available, otherwise use mock
+// In production, we must have real Supabase credentials
 const isRealSupabase =
   !!import.meta.env.VITE_SUPABASE_URL &&
   !!import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -222,6 +256,29 @@ if (import.meta.env.DEV) {
     VITE_SUPABASE_ANON_KEY: import.meta.env.VITE_SUPABASE_ANON_KEY
       ? "Set"
       : "Not set",
+  });
+}
+
+// In production, handle missing Supabase credentials more gracefully
+if (import.meta.env.PROD && !isRealSupabase) {
+  console.error(
+    "CRITICAL ERROR: Missing required Supabase environment variables in production",
+  );
+  // Instead of throwing immediately, we'll set up a client that will show proper errors
+  // This allows the app to load and show a user-friendly error message
+  window.addEventListener("DOMContentLoaded", () => {
+    const rootElement = document.getElementById("root");
+    if (rootElement) {
+      rootElement.innerHTML = `
+        <div class="flex items-center justify-center h-screen bg-gray-100">
+          <div class="p-8 bg-white rounded-lg shadow-lg max-w-md w-full">
+            <h2 class="text-2xl font-bold text-red-600 mb-4">Configuration Error</h2>
+            <p class="text-gray-700 mb-6">The application is missing required configuration. Please contact the administrator.</p>
+            <p class="text-sm text-gray-500 mb-4">Error: Missing Supabase credentials</p>
+          </div>
+        </div>
+      `;
+    }
   });
 }
 

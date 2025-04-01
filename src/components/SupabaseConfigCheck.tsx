@@ -18,6 +18,16 @@ type CheckResult = {
   details?: string;
 };
 
+type BucketCreationResult = {
+  success: boolean;
+  message: string;
+  details?: {
+    taskFilesBucket?: { created: boolean; error?: string };
+    avatarsBucket?: { created: boolean; error?: string };
+    bucketCreationErrors?: string[] | null;
+  };
+};
+
 type StorageBucket = Database["storage"]["Tables"]["buckets"]["Row"];
 type StorageBucketsResponse = {
   data: StorageBucket[] | null;
@@ -126,18 +136,20 @@ const SupabaseConfigCheck = () => {
             console.log("Creating buckets directly via storage API...");
             let taskFilesCreated = false;
             let avatarsCreated = false;
-            let createErrors = [];
+            let createErrors: string[] = [];
 
             try {
               // Create buckets directly using SQL migration instead of edge function
               console.log("Creating buckets via direct SQL...");
 
               // Simulate a successful response since we've created the buckets via SQL migration
-              const bucketCreationData = {
+              const bucketCreationData: BucketCreationResult = {
                 success: true,
                 message: "Required buckets created via SQL migration",
-                taskFiles: { success: true },
-                avatars: { success: true },
+                details: {
+                  taskFilesBucket: { created: true },
+                  avatarsBucket: { created: true },
+                },
               };
               const bucketCreationError = null;
 
@@ -152,20 +164,20 @@ const SupabaseConfigCheck = () => {
               } else {
                 console.log("Edge function response:", bucketCreationData);
 
-                if (bucketCreationData?.taskFiles) {
-                  if (bucketCreationData.taskFiles.error) {
+                if (bucketCreationData?.details?.taskFilesBucket) {
+                  if (bucketCreationData.details.taskFilesBucket.error) {
                     createErrors.push(
-                      `task_files: ${bucketCreationData.taskFiles.error.message || JSON.stringify(bucketCreationData.taskFiles.error)}`,
+                      `task_files: ${bucketCreationData.details.taskFilesBucket.error}`,
                     );
                   } else {
                     taskFilesCreated = true;
                   }
                 }
 
-                if (bucketCreationData?.avatars) {
-                  if (bucketCreationData.avatars.error) {
+                if (bucketCreationData?.details?.avatarsBucket) {
+                  if (bucketCreationData.details.avatarsBucket.error) {
                     createErrors.push(
-                      `avatars: ${bucketCreationData.avatars.error.message || JSON.stringify(bucketCreationData.avatars.error)}`,
+                      `avatars: ${bucketCreationData.details.avatarsBucket.error}`,
                     );
                   } else {
                     avatarsCreated = true;
@@ -174,7 +186,7 @@ const SupabaseConfigCheck = () => {
               }
 
               // Create a result object to track creation status
-              const createBucketsResult = {
+              const createBucketsResult: BucketCreationResult = {
                 success: taskFilesCreated || avatarsCreated,
                 message:
                   createErrors.length > 0
@@ -187,11 +199,6 @@ const SupabaseConfigCheck = () => {
                     createErrors.length > 0 ? createErrors : null,
                 },
               };
-
-              const createBucketsError =
-                createErrors.length > 0
-                  ? { message: "Some buckets could not be created" }
-                  : null;
 
               if (
                 createErrors.length > 0 &&
@@ -214,17 +221,13 @@ const SupabaseConfigCheck = () => {
 
                   if (
                     details.taskFilesBucket &&
-                    details.taskFilesBucket.error
+                    !details.taskFilesBucket.created
                   ) {
-                    errorMessages.push(
-                      `task_files: ${details.taskFilesBucket.error}`,
-                    );
+                    errorMessages.push(`task_files: Failed to create bucket`);
                   }
 
-                  if (details.avatarsBucket && details.avatarsBucket.error) {
-                    errorMessages.push(
-                      `avatars: ${details.avatarsBucket.error}`,
-                    );
+                  if (details.avatarsBucket && !details.avatarsBucket.created) {
+                    errorMessages.push(`avatars: Failed to create bucket`);
                   }
 
                   if (
@@ -240,7 +243,8 @@ const SupabaseConfigCheck = () => {
                     details:
                       errorMessages.length > 0
                         ? `Errors: ${errorMessages.join("; ")}`
-                        : createBucketsResult.error || "Unknown error occurred",
+                        : createBucketsResult.message ||
+                          "Unknown error occurred",
                   });
 
                   // Don't proceed to verification if we already know it failed
@@ -286,21 +290,19 @@ const SupabaseConfigCheck = () => {
                       if (
                         !nowHasTaskFiles &&
                         details.taskFilesBucket &&
-                        details.taskFilesBucket.error
+                        !details.taskFilesBucket.created
                       ) {
                         errorMessages.push(
-                          `task_files: ${details.taskFilesBucket.error}`,
+                          `task_files: Failed to create bucket`,
                         );
                       }
 
                       if (
                         !nowHasAvatars &&
                         details.avatarsBucket &&
-                        details.avatarsBucket.error
+                        !details.avatarsBucket.created
                       ) {
-                        errorMessages.push(
-                          `avatars: ${details.avatarsBucket.error}`,
-                        );
+                        errorMessages.push(`avatars: Failed to create bucket`);
                       }
 
                       if (errorMessages.length > 0) {

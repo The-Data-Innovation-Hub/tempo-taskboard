@@ -14,6 +14,17 @@ import { useAuth, User } from "@/lib/auth";
 import { userApi, Project } from "@/lib/api";
 import NeumorphicContainer from "@/components/common/NeumorphicContainer";
 import { Database } from "@/types/supabase";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 type ExtendedUser = User & {
   organization?: {
@@ -32,6 +43,8 @@ const UserDetails = () => {
   const navigate = useNavigate();
   const [user, setUser] = useState<ExtendedUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
   // Check if current user is admin
   useEffect(() => {
@@ -68,6 +81,31 @@ const UserDetails = () => {
 
     fetchUserDetails();
   }, [id, toast]);
+
+  const handleDeleteUser = async () => {
+    if (!user || !id) return;
+
+    try {
+      setIsDeleting(true);
+      await userApi.delete(id);
+      toast({
+        title: "User deleted",
+        description: `${user.name} has been successfully deleted.`,
+      });
+      navigate("/users");
+    } catch (error) {
+      console.error("Error deleting user:", error);
+      toast({
+        title: "Delete failed",
+        description:
+          error instanceof Error ? error.message : "Failed to delete user",
+        variant: "destructive",
+      });
+    } finally {
+      setIsDeleting(false);
+      setShowDeleteDialog(false);
+    }
+  };
 
   return (
     <div className="user-details-page p-6 max-w-4xl mx-auto bg-white">
@@ -209,16 +247,34 @@ const UserDetails = () => {
             >
               Edit User
             </Button>
-            <Button
-              variant="destructive"
-              onClick={() => {
-                // This would typically open a confirmation dialog
-                // For now, just navigate back to users page
-                navigate("/users");
-              }}
+
+            <AlertDialog
+              open={showDeleteDialog}
+              onOpenChange={setShowDeleteDialog}
             >
-              Delete User
-            </Button>
+              <AlertDialogTrigger asChild>
+                <Button variant="destructive">Delete User</Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This action will delete {user.name}'s account and cannot be
+                    undone. All associated data will be permanently removed.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={handleDeleteUser}
+                    disabled={isDeleting}
+                    className="bg-red-600 hover:bg-red-700 focus:ring-red-600"
+                  >
+                    {isDeleting ? "Deleting..." : "Delete User"}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
         </div>
       ) : (

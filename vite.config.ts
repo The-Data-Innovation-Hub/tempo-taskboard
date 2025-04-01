@@ -10,6 +10,32 @@ if (process.env.TEMPO === "true") {
   conditionalPlugins.push(["tempo-devtools/swc", {}]);
 }
 
+// Security headers for the application
+const securityHeaders = {
+  // Content Security Policy
+  "Content-Security-Policy":
+    "default-src 'self'; script-src 'self' 'unsafe-inline' https://storage.googleapis.com; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.dicebear.com https://images.unsplash.com; img-src 'self' data: https://*.supabase.co https://api.dicebear.com https://images.unsplash.com; style-src 'self' 'unsafe-inline'; font-src 'self' data:; frame-ancestors 'none';",
+
+  // Strict Transport Security (HSTS)
+  "Strict-Transport-Security": "max-age=63072000; includeSubDomains; preload",
+
+  // X-Content-Type-Options
+  "X-Content-Type-Options": "nosniff",
+
+  // X-Frame-Options
+  "X-Frame-Options": "DENY",
+
+  // X-XSS-Protection
+  "X-XSS-Protection": "1; mode=block",
+
+  // Referrer Policy
+  "Referrer-Policy": "strict-origin-when-cross-origin",
+
+  // Permissions Policy
+  "Permissions-Policy":
+    "camera=(), microphone=(), geolocation=(self), interest-cohort=()",
+};
+
 // https://vitejs.dev/config/
 export default defineConfig(({ mode, command }) => {
   const isProd = mode === "production" || command === "build";
@@ -17,10 +43,10 @@ export default defineConfig(({ mode, command }) => {
   // Set the third parameter to '' to load all env regardless of the `VITE_` prefix.
   const env = loadEnv(mode, process.cwd(), "");
 
-  // Hardcoded Supabase values for development
-  const supabaseUrl = "https://gwyfopiauplascaofhii.supabase.co";
+  // Use environment variables for Supabase connection
+  const supabaseUrl = env.VITE_SUPABASE_URL || env.SUPABASE_URL || "";
   const supabaseAnonKey =
-    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd3eWZvcGlhdXBsYXNjYW9maGlpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDI4MjQ1NTksImV4cCI6MjA1ODQwMDU1OX0.bHQnCfb5GM3IUh_Y6U-LF2LzL0FBrgRPSqbcVVPbtec";
+    env.VITE_SUPABASE_ANON_KEY || env.SUPABASE_ANON_KEY || "";
 
   // Only log environment variables in development mode
   if (mode === "development") {
@@ -31,8 +57,8 @@ export default defineConfig(({ mode, command }) => {
       VITE_SUPABASE_ANON_KEY: env.VITE_SUPABASE_ANON_KEY
         ? "[set]"
         : "[not set]",
-      HARDCODED_URL: supabaseUrl,
-      HARDCODED_KEY: "[set]", // Not showing the actual key in logs
+      SUPABASE_URL: supabaseUrl ? "[set]" : "[not set]",
+      SUPABASE_ANON_KEY: supabaseAnonKey ? "[set]" : "[not set]",
     });
   }
 
@@ -45,10 +71,30 @@ export default defineConfig(({ mode, command }) => {
             compress: {
               drop_console: true,
               drop_debugger: true,
+              pure_funcs: [
+                "console.log",
+                "console.info",
+                "console.debug",
+                "console.warn",
+              ],
+              passes: 2,
+              ecma: 2020,
+            },
+            mangle: {
+              safari10: true,
+            },
+            format: {
+              comments: false,
             },
           }
         : undefined,
       sourcemap: !isProd,
+      // Optimize CSS
+      cssCodeSplit: true,
+      cssMinify: isProd,
+      // Enable tree shaking
+      assetsInlineLimit: 4096,
+      chunkSizeWarningLimit: 1000,
       // Split chunks for better caching
       rollupOptions: {
         output: {
@@ -58,11 +104,26 @@ export default defineConfig(({ mode, command }) => {
               "@radix-ui/react-dialog",
               "@radix-ui/react-dropdown-menu",
               "@radix-ui/react-toast",
+              "@radix-ui/react-accordion",
+              "@radix-ui/react-alert-dialog",
+              "@radix-ui/react-avatar",
+              "@radix-ui/react-checkbox",
+              "@radix-ui/react-label",
+              "@radix-ui/react-popover",
+              "@radix-ui/react-select",
+              "@radix-ui/react-tabs",
+              "@radix-ui/react-tooltip",
             ],
-            supabase: ["@supabase/supabase-js"],
+            forms: ["react-hook-form", "zod"],
           },
         },
       },
+    },
+    // Enable build-time optimizations
+    esbuild: {
+      target: ["es2020", "edge88", "firefox78", "chrome87", "safari14"],
+      legalComments: "none",
+      treeShaking: true,
     },
     base: "/",
     appType: "spa",
@@ -85,13 +146,36 @@ export default defineConfig(({ mode, command }) => {
       // @ts-ignore
       allowedHosts: true,
     },
+    // Optimize dependencies
+    optimizeDeps: {
+      include: [
+        "react",
+        "react-dom",
+        "react-router-dom",
+        "@supabase/supabase-js",
+        "react-beautiful-dnd",
+        "lucide-react",
+        "clsx",
+        "tailwind-merge",
+        "zustand",
+        "framer-motion",
+      ],
+      esbuildOptions: {
+        target: "es2020",
+      },
+    },
+    // Preload critical assets
+    preview: {
+      port: 4173,
+      host: true,
+    },
     // Make all environment variables available to the app
     define: {
       "import.meta.env.VITE_SUPABASE_URL": JSON.stringify(
-        env.SUPABASE_URL || env.VITE_SUPABASE_URL || supabaseUrl,
+        env.VITE_SUPABASE_URL || env.SUPABASE_URL || "",
       ),
       "import.meta.env.VITE_SUPABASE_ANON_KEY": JSON.stringify(
-        env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY || supabaseAnonKey,
+        env.VITE_SUPABASE_ANON_KEY || env.SUPABASE_ANON_KEY || "",
       ),
     },
   };

@@ -67,9 +67,9 @@ const SupabaseTest = () => {
       };
 
       // First, try to create the test table if it doesn't exist
-      const { error: createTableError } = (await supabase.rpc(
-        "create_test_table_if_not_exists",
-      )) as RpcResponse<any>;
+      const { error: createTableError } = (await supabase.rpc("exec_sql", {
+        sql_query: `CREATE TABLE IF NOT EXISTS ${testTable} (test_id TEXT PRIMARY KEY, message TEXT, created_at TIMESTAMP)`,
+      })) as RpcResponse<any>;
 
       if (createTableError) {
         // If the RPC function doesn't exist, we'll try to insert anyway
@@ -135,31 +135,34 @@ const SupabaseTest = () => {
               let rlsData = null;
               let rlsError = null;
               try {
-                const { data, error } = (await supabase.rpc("check_table_rls", {
-                  table_name: testTable,
-                })) as RlsCheckResponse;
+                const { data, error } = (await supabase.rpc(
+                  "check_rls_enabled",
+                  {
+                    table_name: testTable,
+                  },
+                )) as RlsCheckResponse;
                 rlsData = data;
                 rlsError = error;
                 console.log("RLS check result:", { data, error });
 
                 // Additional debug info
-                const { data: tableInfo, error: tableError } = (await supabase
-                  .from("pg_tables")
-                  .select("*")
-                  .eq("tablename", testTable)) as {
-                  data: any[] | null;
-                  error: Error | null;
-                };
+                const { data: tableInfo, error: tableError } =
+                  (await supabase.rpc("exec_sql", {
+                    sql_query: `SELECT * FROM pg_tables WHERE tablename = '${testTable}'`,
+                  })) as {
+                    data: any[] | null;
+                    error: Error | null;
+                  };
                 console.log("Table info:", { tableInfo, tableError });
 
                 // Check policies directly
-                const { data: policies, error: policiesError } = (await supabase
-                  .from("pg_policies")
-                  .select("*")
-                  .eq("tablename", testTable)) as {
-                  data: any[] | null;
-                  error: Error | null;
-                };
+                const { data: policies, error: policiesError } =
+                  (await supabase.rpc("exec_sql", {
+                    sql_query: `SELECT * FROM pg_policies WHERE tablename = '${testTable}'`,
+                  })) as {
+                    data: any[] | null;
+                    error: Error | null;
+                  };
                 console.log("Policies:", { policies, policiesError });
               } catch (error) {
                 console.error("Error checking RLS status:", error);

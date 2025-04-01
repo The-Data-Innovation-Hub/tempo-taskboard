@@ -395,12 +395,45 @@ export const userApi = {
 
       if (profileError) throw profileError;
 
-      // 3. Delete auth user
-      const { error: authError } = (await supabase.auth.admin.deleteUser(
-        id,
-      )) as SupabaseResponse<any>;
+      // 3. Delete user record from users table
+      const { error: userError } = (await supabase
+        .from("users")
+        .delete()
+        .eq("id", id)) as SupabaseResponse<any>;
 
-      if (authError) throw authError;
+      if (userError) throw userError;
+
+      // 4. Call the Edge Function to delete the auth user
+      try {
+        // Get the current session token for authorization
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData?.session?.access_token;
+
+        if (token) {
+          const { data, error } = await supabase.functions.invoke(
+            "delete_user",
+            {
+              body: { userId: id },
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            },
+          );
+
+          if (error) {
+            console.warn("Edge function error when deleting auth user:", error);
+            // Continue even if auth user deletion fails - the database records are already deleted
+          }
+        } else {
+          console.warn("No auth token available to call delete_user function");
+        }
+      } catch (edgeFunctionError) {
+        console.warn(
+          "Failed to call delete_user edge function:",
+          edgeFunctionError,
+        );
+        // Continue even if the edge function call fails
+      }
     } catch (error) {
       console.error("API: Exception in delete user:", error);
       throw error;

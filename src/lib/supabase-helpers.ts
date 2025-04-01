@@ -4,10 +4,10 @@ import { supabase } from "./supabase";
 
 // Select with pagination
 export const selectWithPagination = async (
-  table: string,
+  table: keyof Database["public"]["Tables"],
   page = 1,
   pageSize = 10,
-  query?: any,
+  query?: (queryBuilder: any) => any,
 ) => {
   const from = supabase.from(table);
   const queryBuilder = query ? query(from) : from;
@@ -21,7 +21,10 @@ export const selectWithPagination = async (
 };
 
 // Count records
-export const countRecords = async (table: string, query?: any) => {
+export const countRecords = async (
+  table: keyof Database["public"]["Tables"],
+  query?: (queryBuilder: any) => any,
+) => {
   const from = supabase.from(table);
   const queryBuilder = query ? query(from) : from;
 
@@ -35,7 +38,7 @@ export const countRecords = async (table: string, query?: any) => {
 
 // Filter by multiple IDs
 export const filterByIds = async (
-  table: string,
+  table: keyof Database["public"]["Tables"],
   ids: string[],
   column = "id",
 ) => {
