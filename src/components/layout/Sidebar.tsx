@@ -78,10 +78,10 @@ const Sidebar = () => {
   const navItems = getNavItems();
 
   return (
-    <div className="sidebar bg-white border-r border-gray-200 h-screen w-64 fixed left-0 top-0 flex flex-col">
+    <div className="sidebar bg-white h-screen fixed left-0 top-0 flex flex-col w-64 shadow-md">
       <div className="sidebar-header p-4 flex flex-col items-center border-b border-gray-200">
         <img
-          src="/logo.svg"
+          src="/taskboard-logo.svg"
           alt="TaskBoard Logo"
           className="h-12 w-auto mb-2"
           onError={(e) => {

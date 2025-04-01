@@ -77,11 +77,11 @@
 
 @layer components {
   .app-container {
-    @apply flex min-h-screen;
+    @apply flex min-h-screen p-0 m-0 gap-0 overflow-hidden box-border;
   }
 
   .content-container {
-    @apply flex-1 ml-64;
+    @apply flex-1 p-0 m-0 box-border ml-64;
   }
 
   .loading-container {
@@ -89,6 +89,6 @@
   }
 
   .sidebar {
-    @apply z-10 shadow-md;
+    @apply z-10 shadow-md box-border;
   }
 }

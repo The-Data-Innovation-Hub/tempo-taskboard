@@ -144,6 +144,7 @@ const ProjectPage = () => {
     columnId: string;
     taskId?: string;
   } | null>(null);
+  const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
 
   const [project, setProject] = useState<ProjectWithColumns | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -387,7 +388,7 @@ const ProjectPage = () => {
             }}
           />
 
-          {taskModalOpen && activeTask && (
+          {activeTask && (
             <TaskModal
               open={taskModalOpen}
               onOpenChange={setTaskModalOpen}

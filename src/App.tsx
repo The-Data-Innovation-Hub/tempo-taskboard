@@ -4,6 +4,7 @@ import { useRoutes, Routes, Route, Navigate } from "react-router-dom";
 import { Provider } from "react-redux";
 import Home from "./components/home";
 import Sidebar from "./components/layout/Sidebar";
+import Header from "./components/layout/Header";
 import AuthGuard from "./components/layout/AuthGuard";
 import { useAuth } from "./lib/auth";
 import { ToastProvider } from "./components/ui/toast";
@@ -242,7 +243,12 @@ function App() {
           <ToastProvider>
             <div className="app-container">
               {isAuthenticated && <Sidebar />}
-              <div className={isAuthenticated ? "content-container" : "w-full"}>
+              <div
+                className={
+                  isAuthenticated ? "content-container pt-16" : "w-full"
+                }
+              >
+                {isAuthenticated && <Header />}
                 <Suspense
                   fallback={
                     <div className="loading-container flex items-center justify-center h-screen">
