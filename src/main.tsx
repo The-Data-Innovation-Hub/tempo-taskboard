@@ -11,8 +11,6 @@ TempoDevtools.init();
 import { initPerformanceMonitoring } from "./lib/performance";
 initPerformanceMonitoring();
 
-const basename = import.meta.env.BASE_URL;
-
 // Install zustand persist middleware
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
@@ -22,7 +20,7 @@ const renderApp = () => {
   try {
     ReactDOM.createRoot(document.getElementById("root")!).render(
       <React.StrictMode>
-        <BrowserRouter basename={basename}>
+        <BrowserRouter>
           <App />
         </BrowserRouter>
       </React.StrictMode>,
